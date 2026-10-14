@@ -1,0 +1,4 @@
+# Netlify: сайт лежит в папке site/ готовым, сборка на Netlify не нужна
+[build]
+  publish = "site"
+  command = ""

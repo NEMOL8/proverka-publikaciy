@@ -1,0 +1,6 @@
+node_modules/
+dist/
+openalex_key.txt
+orcid_token.txt
+evals/*.png
+evals/*.txt
