@@ -70,6 +70,7 @@ const WANT_PROFILE = { ok: 2, check: 1, total: 3, all: 4 };
   const links = await pg.evaluate(() => [...document.querySelectorAll('#outAuthor > table.t tr')].slice(1).map(tr => (tr.querySelector('td:nth-child(2) a') || {}).href || ''));
   T('у каждой публикации автора есть ссылка', links.length === 4 && links.every(h => /^https:\/\/doi\.org\/10\.5555\/t\d$/.test(h)), links);
   const kdTxt = await pg.evaluate(() => { const t = document.body.innerText + document.getElementById('changes').textContent + document.title; return [/\bКД\b|конкурсн|Вариант [1-4]|в счёт/i.test(t), !!document.getElementById('kdOn')]; });
+  T('на странице нет упоминаний заявок', !/заявк|п\. 1\.6/i.test(await pg.evaluate(() => document.body.innerText + document.getElementById('changes').textContent + document.getElementById('author').placeholder + document.getElementById('org').placeholder)), 'есть');
   T('на странице нет упоминаний КД, вариантов и блока проверки по КД', !kdTxt[0] && !kdTxt[1], kdTxt);
   await pg.screenshot({ path: B + '/evals/shot_ocr.png', fullPage: true });
   if (process.env.VARIANTS) {  // макеты оформления: подключить CSS вариантов и снять верх страницы и таблицу
@@ -121,7 +122,7 @@ const WANT_PROFILE = { ok: 2, check: 1, total: 3, all: 4 };
   const ext = await pg.evaluate(() => [...document.querySelectorAll('#outAuthor a')].map(x => x.href).filter(h => /scopus\.com|webofscience|orcid\.org/.test(h)).length); T('ссылки на профили ORCID, Scopus и WoS показаны', ext >= 3, ext);
   // 0.7: блок «Профили автора»
   const pl = await pg.evaluate(() => { const b = document.querySelector('#outAuthor .plinks'); if (!b) return null; const rows = [...b.querySelector('table.t').querySelectorAll('tr')].slice(1).map(tr => [tr.children[0].innerText, tr.children[1].innerText, tr.children[2].innerText]); return { rows, warn: /различаются/.test(b.innerText), search: [...b.querySelectorAll('a')].some(a => /scholar\.google\.com\/citations\?view_op=search_authors/.test(a.href)) }; });
-  const plOk = pl && pl.rows.length === 4 && pl.rows.some(r => /Scopus/.test(r[0]) && /из заявки/.test(r[2]) && /из ORCID/.test(r[2])) && pl.rows.some(r => /Web of Science/.test(r[0]) && /из ORCID/.test(r[2])) && pl.rows.some(r => /OpenAlex/.test(r[0])) && !pl.warn && pl.search;
+  const plOk = pl && pl.rows.length === 4 && pl.rows.some(r => /Scopus/.test(r[0]) && /введено/.test(r[2]) && /из ORCID/.test(r[2])) && pl.rows.some(r => /Web of Science/.test(r[0]) && /из ORCID/.test(r[2])) && pl.rows.some(r => /OpenAlex/.test(r[0])) && !pl.warn && pl.search;
   T('0.7 профили автора: ORCID, Scopus, WoS, OpenAlex с источниками, без расхождений, есть поиск в Google Scholar', plOk, pl);
   await pg.fill('#author', 'AAA-1234-2020/57000000001/0000-0002-1825-0097'); await pg.click('#ago'); await idle();
   const plw = await pg.evaluate(() => (document.querySelector('#outAuthor .plinks') || {}).innerText || '');

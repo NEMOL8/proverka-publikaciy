@@ -1,8 +1,9 @@
 const ORCID_BUILTIN = "", OA_BUILTIN = "SUElqXUhQuvtt1VFt7031j";
 /* ===== Проверка публикаций: правила (без сети, без ИИ) ===== */
-const VERSION = '0.7.5', VERSION_DATE = '14.10.2026';
+const VERSION = '0.7.6', VERSION_DATE = '14.10.2026';
 /* Что нового — показывается на странице */
 const CHANGES = [
+  ['0.7.6', '14.10.2026', ['Подписи сделаны общими, без привязки к конкретным документам: у идентификаторов источник «введено», поле «Организация для сверки».']],
   ['0.7.5', '14.10.2026', ['В блоке «Профили автора» — индекс Хирша по базам: Scopus, Web of Science, РИНЦ — ссылка на профиль, где его видно, и поле, чтобы вписать значение (открытого доступа к этим значениям нет); OpenAlex — свой расчёт, справочно. Вписанные значения попадают в «Скопировать ссылки».']],
   ['0.7.4', '14.10.2026', ['«Проверить связь» опрашивает все базы одновременно и показывает ответы по мере поступления; база, не ответившая за 12 секунд, помечается «не отвечает». Любой запрос к базе теперь ждёт ответа не дольше 20 секунд (раньше зависший сервер мог задерживать работу на минуты).']],
   ['0.7.3', '14.10.2026', ['Встроен ключ OpenAlex: дневной лимит поиска авторов в 10 раз больше (около 1000 поисков по ФИО в день вместо 100). Поле «Ключ OpenAlex» в настройках можно не заполнять; своё значение заменит встроенное только в этом браузере.', 'Убран скрытый блок итоговых выводов: утилита показывает только факты о публикациях и авторах.']],
@@ -11,7 +12,7 @@ const CHANGES = [
   ['0.7', '13.10.2026', ['Блок «Профили автора»: все ссылки на найденного автора (ORCID, Scopus, Web of Science, eLibrary, OpenAlex) с пометкой, откуда взят идентификатор, и ссылки-поиски по ФИО (Google Scholar, ResearchGate, Semantic Scholar и др.); предупреждение, если идентификаторы из разных источников расходятся; «Скопировать ссылки».',
     'Corresponding author у каждой статьи: «да» / «нет» (и кто) / «в базе не указан» — отдельной колонкой в публикациях автора и пометкой в списке.',
     'Фильтры: corresponding author и показатель «от …» (цитирований на документ SCImago на год публикации).',
-    'Организация автора в каждой статье и сверка с организацией из заявки.',
+    'Организация автора в каждой статье и сверка с указанной организацией.',
     'Возможные дубли в списке: одинаковый DOI, одинаковое название, препринт и журнальная версия, тезисы и статья.',
     'Несколько авторов сразу (раздел 3): сводная таблица по исполнителям и публикации каждого.',
     'Сайт: справочники и распознавание загружаются отдельно и кешируются браузером; короткая инструкция; «Что нового»; страница закрыта от поисковиков.']],
@@ -1124,7 +1125,7 @@ const BASES = {
 function profileLinks(S) {
   const ids = [], add = (b, v, src) => { v = String(v || '').trim(); if (!v) return; if (b === 'rid' || b === 'orcid') v = v.toUpperCase(); const o = ids.find(x => x.b === b && x.v === v); if (o) { if (o.src.indexOf(src) < 0) o.src.push(src); } else ids.push({ b, v, src: [src] }); };
   const p = S.parsed || {};
-  add('orcid', p.orcid, 'из заявки'); add('scopus', p.scopus, 'из заявки'); add('rid', p.rid, 'из заявки'); add('rinc', p.rinc, 'из заявки'); add('spin', p.spin, 'из заявки');
+  add('orcid', p.orcid, 'введено'); add('scopus', p.scopus, 'введено'); add('rid', p.rid, 'введено'); add('rinc', p.rinc, 'введено'); add('spin', p.spin, 'введено');
   const prof = S.prof && !S.prof.err ? S.prof : null;
   if (prof) prof.info.forEach(a => { add('orcid', a.orcid, 'из OpenAlex'); add('scopus', a.scopus, 'из OpenAlex'); add('openalex', a.id, 'из OpenAlex'); });
   if (S.orcIds) S.orcIds.list.forEach(x => { const t = x.type.toLowerCase(); if (/scopus/.test(t)) add('scopus', x.value, 'из ORCID'); else if (/researcher\s*id|researcherid|wos|web of science/.test(t)) add('rid', x.value, 'из ORCID'); else if (/elibrary|rinc|ринц/.test(t)) add('rinc', x.value, 'из ORCID'); });
@@ -1202,7 +1203,7 @@ function authorBody(S, k, fid, withFilter) {
     const listed = new Set(W.entries ? W.pubs.filter(p => p.work).map(p => p.work.doi) : []), orgOn = !!$('org').value.trim();
     if (!all.length) h += '<p class="dim">Статей нет. Это не значит, что их нет вообще: профиль в базе может быть пустым.</p>';
     else if (!rows.length) h += '<p class="dim">Под фильтр не подходит ни одна статья.</p>';
-    else h += `<table class="t"><tr><th style="width:5%">Год</th><th>Статья и ссылка</th><th style="width:14%">Издание</th><th style="width:11%">Квартиль</th><th style="width:11%">Белый список</th><th style="width:6%">Показатель</th><th style="width:9%">Место автора</th><th style="width:10%">Corresponding</th><th style="width:13%">Организация${orgOn ? ' (сверка с заявкой)' : ''}</th></tr>` + rows.map(x => {
+    else h += `<table class="t"><tr><th style="width:5%">Год</th><th>Статья и ссылка</th><th style="width:14%">Издание</th><th style="width:11%">Квартиль</th><th style="width:11%">Белый список</th><th style="width:6%">Показатель</th><th style="width:9%">Место автора</th><th style="width:10%">Corresponding</th><th style="width:13%">Организация${orgOn ? ' (сверка)' : ''}</th></tr>` + rows.map(x => {
       const url = wLink(x.w);
       return `<tr><td>${x.w.year || ''}</td><td>${esc(x.w.title)}${k < 0 && listed.has(x.w.doi) && x.w.doi ? ' ' + nchip('в списке') : ''}${x.w.type === 'review' ? ' <span class="dim">обзор</span>' : ''}<br>${url ? lnk(url) : chip('unk', 'ссылки нет')}</td><td>${esc(x.w.journal)}</td><td>${quartText(x.jv, x.j.sj, true)}</td><td>${wlText(x.j.wl, x.w.year, true)}</td><td>${x.jv.cpd != null ? fmtNum(x.jv.cpd) : ''}</td><td class="dim">${esc(x.pos || '')}</td><td>${corrChip(x.corrSt, x.corrNames)}</td><td class="dim">${orgHtml(orgOf(x.me))}</td></tr>`;
     }).join('') + '</table>';
