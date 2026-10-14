@@ -27,8 +27,8 @@
 Ключи (с 0.7.3): если рядом с build.py лежит openalex_key.txt (ключ OpenAlex) или orcid_token.txt (токен ORCID /read-public),
   они встраиваются в страницу и видны в её коде. Сами файлы в исходники и в текст проекта не входят — хранятся у Германа.
   Сейчас встроен ключ OpenAlex; токен ORCID — после ответа ORCID об условиях использования.
-GitHub (с 14.10.2026): репозиторий NEMOL8/proverka-publikaciy (закрытый), Netlify публикует папку site/ из ветки main.
-  Новая версия: python3 build.py && rm -rf site && cp -r dist/site site && git add -A && git commit && git push — сайт обновится сам.
+GitHub (с 14.10.2026): репозиторий NEMOL8/proverka-publikaciy (закрытый), Netlify публикует папку docs/ из ветки main.
+  Новая версия: python3 build.py && rm -rf docs && cp -r dist/site docs && git add -A && git commit && git push — сайт обновится сам.
 Проверки после любой правки:
   node evals/run.js                      — правила, 261 кейс (часть — правила старого блока проверки по КД, код остался в src/core.js, на странице не используется)
   LANG=C.UTF-8 node evals/browser.js     — страница и сайт в браузере, 65 проверок
