@@ -40,7 +40,7 @@ const WANT_PROFILE = { ok: 2, check: 1, total: 3, all: 4 };
           return json(route, { results: r }); }
         if (/authors\/https:\/\/orcid\.org\/0000-0002-1825-0097/.test(u)) return json(route, { id: 'https://openalex.org/A1', display_name: ANAME.A1, orcid: 'https://orcid.org/0000-0002-1825-0097', works_count: 4, summary_stats: { h_index: 3 }, last_known_institutions: [{ display_name: 'Вымышленный университет' }] });
         if (/filter=scopus:57000000000/.test(u)) return json(route, { results: [{ id: 'https://openalex.org/A1', display_name: ANAME.A1, orcid: null, works_count: 4, last_known_institutions: [] }] });
-        let m = u.match(/authors\/(A\d+)/); if (m) return json(route, { id: m[1], display_name: ANAME[m[1]], orcid: null, works_count: 4, last_known_institutions: [{ display_name: 'Вымышленный университет' }] });
+        let m = u.match(/authors\/(A\d+)/); if (m) return json(route, { id: m[1], display_name: ANAME[m[1]], orcid: null, works_count: 4, summary_stats: { h_index: 3 }, last_known_institutions: [{ display_name: 'Вымышленный университет' }] });
         m = u.match(/filter=author\.id:([A\d|]+)/); if (m) { const ids = m[1].split('|'); return json(route, { meta: { next_cursor: null }, results: PUBS.map((p, i) => [p, i]).filter(([p]) => p[6] === 'journal-article' && p[7].some(f => ids.includes(AID[f]))).map(([p, i]) => ({ doi: 'https://doi.org/10.5555/t' + i, title: p[1], publication_year: p[2], type: 'article', primary_location: { source: { display_name: p[3], issn: p[5], type: 'journal' } }, authorships: ash(p, i), id: 'https://openalex.org/W' + i })) }); }
         m = u.match(/works\/https:\/\/doi\.org\/10\.5555\/t(\d)/); if (m) return json(route, { id: 'W' + m[1], type: 'article', authorships: ash(PUBS[+m[1]], +m[1]), primary_location: null });
         return json(route, { results: [] });
@@ -120,7 +120,7 @@ const WANT_PROFILE = { ok: 2, check: 1, total: 3, all: 4 };
   T('строка идентификаторов: найден по ORCID, 4 статьи', a.loaded && a.n === 4 && /ORCID 0000-0002-1825-0097/.test(a.how), a);
   const ext = await pg.evaluate(() => [...document.querySelectorAll('#outAuthor a')].map(x => x.href).filter(h => /scopus\.com|webofscience|orcid\.org/.test(h)).length); T('ссылки на профили ORCID, Scopus и WoS показаны', ext >= 3, ext);
   // 0.7: блок «Профили автора»
-  const pl = await pg.evaluate(() => { const b = document.querySelector('#outAuthor .plinks'); if (!b) return null; const rows = [...b.querySelectorAll('table.t tr')].slice(1).map(tr => [tr.children[0].innerText, tr.children[1].innerText, tr.children[2].innerText]); return { rows, warn: /различаются/.test(b.innerText), search: [...b.querySelectorAll('a')].some(a => /scholar\.google\.com\/citations\?view_op=search_authors/.test(a.href)) }; });
+  const pl = await pg.evaluate(() => { const b = document.querySelector('#outAuthor .plinks'); if (!b) return null; const rows = [...b.querySelector('table.t').querySelectorAll('tr')].slice(1).map(tr => [tr.children[0].innerText, tr.children[1].innerText, tr.children[2].innerText]); return { rows, warn: /различаются/.test(b.innerText), search: [...b.querySelectorAll('a')].some(a => /scholar\.google\.com\/citations\?view_op=search_authors/.test(a.href)) }; });
   const plOk = pl && pl.rows.length === 4 && pl.rows.some(r => /Scopus/.test(r[0]) && /из заявки/.test(r[2]) && /из ORCID/.test(r[2])) && pl.rows.some(r => /Web of Science/.test(r[0]) && /из ORCID/.test(r[2])) && pl.rows.some(r => /OpenAlex/.test(r[0])) && !pl.warn && pl.search;
   T('0.7 профили автора: ORCID, Scopus, WoS, OpenAlex с источниками, без расхождений, есть поиск в Google Scholar', plOk, pl);
   await pg.fill('#author', 'AAA-1234-2020/57000000001/0000-0002-1825-0097'); await pg.click('#ago'); await idle();
@@ -133,6 +133,12 @@ const WANT_PROFILE = { ok: 2, check: 1, total: 3, all: 4 };
     await pg.evaluate(() => { document.getElementById('orcidToken').value = ''; applyNet(); try { localStorage.removeItem('pc_orcidToken'); } catch (e) { } }); }
   { const ok = await pg.evaluate(() => OA_BUILTIN); const oaU = hits.filter(u => /api\.openalex\.org/.test(u)).pop() || '';
     T('ключ OpenAlex: ' + (ok ? 'встроенный уходит в запросы' : 'не встроен — запросы без ключа'), ok ? oaU.includes('api_key=' + ok) : !/api_key=/.test(oaU), [ok, oaU.slice(0, 160)]); }
+  // 0.7.5: индекс Хирша по базам (ожидания записаны до прогона): строки Scopus, WoS, РИНЦ, OpenAlex; Scopus — ссылка на профиль 57000000000; OpenAlex — 3; вписанное значение сохраняется
+  { const hr = await pg.evaluate(() => { const t = [...document.querySelectorAll('#outAuthor .plinks table.t')].pop(); return t ? [...t.rows].slice(1).map(r => [r.cells[0].innerText.trim(), r.cells[1].innerText.trim(), [...r.cells[2].querySelectorAll('a')].map(a => a.href).join(' ')]) : null; });
+    T('Хирш: строки Scopus, WoS, РИНЦ, OpenAlex; Scopus — ссылка на профиль из заявки; OpenAlex — 3', hr && hr.map(r => r[0]).join('|') === 'Scopus|Web of Science|РИНЦ (eLibrary)|OpenAlex' && /authorId=57000000001/.test(hr[0][2]) && /webofscience\.com\/wos\/author\/rid\/AAA-1234-2020/.test(hr[1][2]) && hr[3][1] === '3', hr);
+    await pg.evaluate(() => setHirsch(-1, 'scopus', '15'));
+    await (await pg.$('#outAuthor .plinks')).screenshot({ path: B + '/evals/shot_hirsch.png' });
+    const kept = await pg.evaluate(() => [...document.querySelectorAll('#outAuthor .plinks input')][0].value); T('Хирш: вписанное значение Scopus сохраняется после перерисовки', kept === '15', kept); }
   // 5. ORCID с ошибкой + Scopus ID
   await pg.fill('#author', '0000-0002-1825-0098 57000000000'); await pg.click('#ago'); await idle(); a = await auState();
   T('ORCID с ошибкой отмечен, автор найден по Scopus ID', a.loaded && /Scopus ID/.test(a.how) && a.msgs.some(m => /ошибк/.test(m)), a);
@@ -150,7 +156,7 @@ const WANT_PROFILE = { ok: 2, check: 1, total: 3, all: 4 };
   await pg.goto(URL0); await pg.fill('#author', 'Соколова Анна'); await pg.click('#ago'); await idle(); a = await auState();
   T('только ФИО: показаны кандидаты, сам не выбирает', !a.loaded && a.cands === 2, a);
   await pg.click('button[onclick^="pickAuthor(\'A1\')"]'); await idle(); a = await auState(); T('после выбора кандидата: 4 статьи', a.loaded && a.n === 4, a);
-  const pln = await pg.evaluate(() => { const b = document.querySelector('#outAuthor .plinks'); return b ? { rows: [...b.querySelectorAll('table.t tr')].slice(1).map(tr => tr.children[0].innerText), links: [...b.querySelectorAll('a')].map(a => a.href) } : null; });
+  const pln = await pg.evaluate(() => { const b = document.querySelector('#outAuthor .plinks'); return b ? { rows: [...b.querySelector('table.t').querySelectorAll('tr')].slice(1).map(tr => tr.children[0].innerText), links: [...b.querySelectorAll('a')].map(a => a.href) } : null; });
   T('0.7 профили автора: найден по ФИО без идентификаторов — OpenAlex и ссылки-поиски', pln && pln.rows.join() === 'OpenAlex' && pln.links.some(h => /researchgate\.net\/search\/researcher/.test(h)) && pln.links.some(h => /elibrary\.ru\/authors\.asp/.test(h)), pln);
   // 8а. пустая строка внутри записи и список не с 1 (случай Германа 09.10.2026, вымышленный)
   await pg.fill('#list', '7. Sokolova A.V., Orlov D.K. (2023) Alginate sorbents for oil spill response in cold\n\nseawater. Nature 615, 1-9\n\n8. Orlov D.K., Sokolova A.V., Lebedev M.N. (2022) Thermal transport in layered oxide ceramics under cyclic load. Physical Review B');

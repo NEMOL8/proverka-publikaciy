@@ -1,8 +1,9 @@
 const ORCID_BUILTIN = "", OA_BUILTIN = "SUElqXUhQuvtt1VFt7031j";
 /* ===== Проверка публикаций: правила (без сети, без ИИ) ===== */
-const VERSION = '0.7.4', VERSION_DATE = '14.10.2026';
+const VERSION = '0.7.5', VERSION_DATE = '14.10.2026';
 /* Что нового — показывается на странице */
 const CHANGES = [
+  ['0.7.5', '14.10.2026', ['В блоке «Профили автора» — индекс Хирша по базам: Scopus, Web of Science, РИНЦ — ссылка на профиль, где его видно, и поле, чтобы вписать значение (открытого доступа к этим значениям нет); OpenAlex — свой расчёт, справочно. Вписанные значения попадают в «Скопировать ссылки».']],
   ['0.7.4', '14.10.2026', ['«Проверить связь» опрашивает все базы одновременно и показывает ответы по мере поступления; база, не ответившая за 12 секунд, помечается «не отвечает». Любой запрос к базе теперь ждёт ответа не дольше 20 секунд (раньше зависший сервер мог задерживать работу на минуты).']],
   ['0.7.3', '14.10.2026', ['Встроен ключ OpenAlex: дневной лимит поиска авторов в 10 раз больше (около 1000 поисков по ФИО в день вместо 100). Поле «Ключ OpenAlex» в настройках можно не заполнять; своё значение заменит встроенное только в этом браузере.', 'Убран скрытый блок итоговых выводов: утилита показывает только факты о публикациях и авторах.']],
   ['0.7.2', '14.10.2026', ['Оформление по брендбуку Инконсалт: бордовая шапка с логотипом и сетчатым узором, заголовки заглавными буквами (Circe ExtraBold), тёмные шапки таблиц. Фирменный красный — только тонкой линией под шапкой; цвета пометок не меняются.']],
@@ -843,7 +844,7 @@ async function init() {
   if (!ocrAvailable()) { $('drop').innerHTML = 'Распознавание снимков в эту сборку не включено — вставьте список текстом.'; $('afile').style.display = 'none'; $('gfile').style.display = 'none'; }
 }
 const W = { entries: null, works: [], pubs: [], netDown: '', auto: null, dups: [] };
-const newS = () => ({ prof: null, cands: null, orcCands: null, similar: null, msgs: [], parsed: null, orcIds: null });
+const newS = () => ({ prof: null, cands: null, orcCands: null, similar: null, msgs: [], parsed: null, orcIds: null, hirsch: {} });
 let AU = newS();
 const G = { items: [] };
 const stOf = k => k < 0 ? AU : G.items[k].S;
@@ -1152,13 +1153,32 @@ function profileLinksHtml(S, k) {
   if (L.ids.length) h += '<table class="t"><tr><th style="width:24%">База</th><th style="width:22%">Идентификатор</th><th style="width:18%">Откуда взят</th><th>Ссылка</th></tr>' + L.ids.map(x => { const B = BASES[x.b]; return `<tr><td>${esc(B.name)}</td><td>${esc(x.v)}</td><td class="dim">${esc(x.src.join(', '))}</td><td>${lnk(B.url(x.v))}${B.note ? ' <span class="dim">— ' + esc(B.note) + '</span>' : ''}</td></tr>`; }).join('') + '</table>';
   if (L.sr.length) h += `<p class="dim" style="margin-bottom:0">Поиск по имени (это не точный профиль — найдите нужного человека сами): ${L.sr.map(x => lnk(x.u, x.b) + (x.manual ? ' (форма поиска, ввести «' + esc(x.q) + '»)' : '')).join(' · ')}</p>`;
   if (L.orcErr) h += `<p class="dim" style="margin-bottom:0">Идентификаторы из записи ORCID не получены: ${esc(L.orcErr)}.</p>`;
+  h += hirschHtml(S, k, L);
   return h + ` <p style="margin:6px 0 0"><button class="sec small" onclick="copyLinks(${k})">Скопировать ссылки</button></p></div>`;
 }
+/* ----- Индекс Хирша по базам. Scopus, WoS и РИНЦ открытых интерфейсов не дают — значение смотрится в профиле по ссылке и вписывается вручную;
+   OpenAlex считает свой Хирш (по своей базе, с самоцитированием) — показывается справочно. ----- */
+const H_BASES = [['scopus', 'Scopus', 'scopus'], ['wos', 'Web of Science', 'rid'], ['rinc', 'РИНЦ (eLibrary)', 'rinc']];
+function hirschLink(L, idb) { const x = L.ids.find(i => i.b === idb); if (x) return { u: BASES[idb].url(x.v), t: 'профиль ' + x.v }; const s = L.sr.find(i => i.b === ({ scopus: 'Scopus', rid: 'Web of Science', rinc: 'eLibrary' })[idb]); return s ? { u: s.u, t: 'поиск автора', q: s.q } : null; }
+function hirschHtml(S, k, L) {
+  const prof = S.prof && !S.prof.err ? S.prof : null; if (!prof && !L.ids.length) return '';
+  let h = '<p style="margin:10px 0 4px"><b>Индекс Хирша</b></p><table class="t"><tr><th style="width:24%">База</th><th style="width:22%">Значение</th><th>Где посмотреть</th></tr>';
+  for (const [key, name, idb] of H_BASES) {
+    const l = hirschLink(L, idb), v = S.hirsch[key] || '';
+    h += `<tr><td>${esc(name)}</td><td><input type="text" class="yr" value="${esc(v)}" placeholder="вписать" onchange="setHirsch(${k},'${key}',this.value)"> <span class="dim">${v ? 'вписано вручную' : ''}</span></td><td>${l ? lnk(l.u, l.t) + (l.q ? ' <span class="dim">(ввести «' + esc(l.q) + '»)</span>' : '') : '<span class="dim">идентификатора нет</span>'} <span class="dim">— открытого доступа к значению нет, посмотрите в профиле${key === 'scopus' ? ' (нужна подписка или вход)' : (key === 'wos' ? ' (нужен доступ к Web of Science)' : '')}</span></td></tr>`;
+  }
+  const oa = prof ? prof.info.filter(a => a.h != null) : [];
+  h += `<tr><td>OpenAlex</td><td>${oa.length ? oa.map(a => '<b>' + a.h + '</b>' + (oa.length > 1 ? ' <span class="dim">(' + esc(a.id) + ')</span>' : '')).join(', ') : chip('unk', 'нет данных')}</td><td>${prof ? prof.info.map(a => lnk('https://openalex.org/' + a.id, 'профиль ' + a.id)).join(', ') : ''} <span class="dim">— свой расчёт OpenAlex по своей базе и с самоцитированием; с Scopus, WoS и РИНЦ не совпадает, для сверки не годится</span></td></tr></table>`;
+  return h;
+}
+function setHirsch(k, key, v) { const S = stOf(k); v = String(v || '').trim(); if (v) S.hirsch[key] = v; else delete S.hirsch[key]; k < 0 ? renderAuthor() : renderGroup(); }
 function copyLinks(k) {
   const S = stOf(k), L = profileLinks(S), out = [];
   L.ids.forEach(x => out.push(tsvRow([BASES[x.b].name, x.v, x.src.join(', '), BASES[x.b].url(x.v)])));
   L.sr.forEach(x => out.push(tsvRow([x.b + ' — поиск по имени', x.q, '', x.u])));
   if (L.warns.length) out.push(tsvRow(['Проверьте', L.warns.join('; ')]));
+  H_BASES.forEach(([key, name]) => { if (S.hirsch[key]) out.push(tsvRow(['Индекс Хирша ' + name, S.hirsch[key], 'вписано вручную'])); });
+  if (S.prof && !S.prof.err) S.prof.info.filter(a => a.h != null).forEach(a => out.push(tsvRow(['Индекс Хирша OpenAlex (свой расчёт)', a.h, a.id, 'https://openalex.org/' + a.id])));
   toClip(out.join('\n'), k < 0 ? 'astatus' : 'gstatus');
 }
 
