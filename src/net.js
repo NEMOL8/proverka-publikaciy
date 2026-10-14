@@ -1,12 +1,19 @@
 /* ===== Запросы в открытые базы (Crossref, OpenAlex) ===== */
-const NET = { orcid: 'https://pub.orcid.org', orcidToken: '', useORCID: true, crossref: 'https://api.crossref.org', openalex: 'https://api.openalex.org', wl: 'https://journalrank.rcsi.science/api', oaKey: '', useOA: true, useWL: true, wlCache: new Map(), srcCache: new Map(), log: [], fetch: null, pause: 120 };
+const NET = { orcid: 'https://pub.orcid.org', orcidToken: '', useORCID: true, crossref: 'https://api.crossref.org', openalex: 'https://api.openalex.org', wl: 'https://journalrank.rcsi.science/api', oaKey: '', useOA: true, useWL: true, wlCache: new Map(), srcCache: new Map(), log: [], fetch: null, pause: 120, timeout: 20000 };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-async function getJson(url, tries) {
-  const f = NET.fetch || fetch; tries = tries || 2;
+/* Запрос с ограничением времени: если база не ответила за ms, запрос обрывается и считается «нет связи» (раньше браузер мог ждать минутами) */
+async function tfetch(url, opts, ms) {
+  const f = NET.fetch || fetch; ms = ms || NET.timeout;
+  const ac = typeof AbortController !== 'undefined' ? new AbortController() : null; let timer;
+  const to = new Promise((_, bad) => { timer = setTimeout(() => { if (ac) ac.abort(); const e = new Error('нет ответа за ' + Math.round(ms / 1000) + ' с'); e.timeout = true; bad(e); }, ms); });
+  try { return await Promise.race([f(url, Object.assign({}, opts || {}, ac ? { signal: ac.signal } : {})), to]); } finally { clearTimeout(timer); }
+}
+async function getJson(url, tries, ms) {
+  tries = tries || 2;
   for (let k = 0; k < tries; k++) {
     let res;
-    try { res = await f(url, { headers: { Accept: 'application/json' } }); }
-    catch (e) { NET.log.push({ url, err: String(e.message || e) }); if (k + 1 < tries) { await sleep(800); continue; } const er = new Error('нет связи'); er.kind = 'net'; throw er; }
+    try { res = await tfetch(url, { headers: { Accept: 'application/json' } }, ms); }
+    catch (e) { NET.log.push({ url, err: String(e.message || e) }); if (k + 1 < tries) { await sleep(800); continue; } const er = new Error(e.timeout ? e.message : 'нет связи'); er.kind = 'net'; throw er; }
     NET.log.push({ url, status: res.status });
     if (res.status === 404) return null;
     if (res.status === 429 || res.status >= 500) { if (k + 1 < tries) { await sleep(2500); continue; } const er = new Error(res.status === 429 ? 'база ограничила число запросов' : 'база временно недоступна (' + res.status + ')'); er.kind = 'limit'; throw er; }
@@ -86,11 +93,11 @@ async function authorByOrcid(orcid) {
 }
 /* Реестр ORCID: поиск ORCID по внешнему идентификатору (Scopus ID, ResearcherID) или по имени.
    Возвращает {list:[{orcid,name,inst}], err}. Если реестр не отвечает странице — отключается до конца сеанса, поиск идёт дальше. */
-async function orcidSearch(q) {
+async function orcidSearch(q, ms) {
   if (!NET.useORCID) return { list: [], err: NET.orcidOff || 'реестр ORCID отключён' };
-  const f = NET.fetch || fetch, url = `${NET.orcid}/v3.0/expanded-search/?q=${encodeURIComponent(q)}&rows=10`, h = { Accept: 'application/json' };
+  const url = `${NET.orcid}/v3.0/expanded-search/?q=${encodeURIComponent(q)}&rows=10`, h = { Accept: 'application/json' };
   if (NET.orcidToken) h.Authorization = 'Bearer ' + NET.orcidToken;
-  let res; try { res = await f(url, { headers: h }); } catch (e) { NET.log.push({ url, err: String(e.message || e) }); NET.useORCID = false; NET.orcidOff = 'реестр ORCID не отвечает этой странице (нет связи или запрет запросов с чужих страниц)'; return { list: [], err: NET.orcidOff }; }
+  let res; try { res = await tfetch(url, { headers: h }, ms); } catch (e) { NET.log.push({ url, err: String(e.message || e) }); NET.useORCID = false; NET.orcidOff = 'реестр ORCID не отвечает этой странице (' + (e.timeout ? e.message : 'нет связи или запрет запросов с чужих страниц') + ')'; return { list: [], err: NET.orcidOff }; }
   NET.log.push({ url, status: res.status });
   if (res.status === 401 || res.status === 403) { NET.useORCID = false; NET.orcidOff = 'реестр ORCID требует токен (поле «Токен ORCID» в настройках)'; return { list: [], err: NET.orcidOff }; }
   if (!res.ok) return { list: [], err: 'реестр ORCID ответил ' + res.status };
@@ -101,9 +108,9 @@ async function orcidSearch(q) {
    без него пробуем так же. Возвращает {list:[{type, value, url}], err}. */
 async function orcidExternalIds(orcid) {
   if (!NET.useORCID) return { list: [], err: NET.orcidOff || 'реестр ORCID отключён' };
-  const f = NET.fetch || fetch, url = `${NET.orcid}/v3.0/${orcid}/external-identifiers`, h = { Accept: 'application/json' };
+  const url = `${NET.orcid}/v3.0/${orcid}/external-identifiers`, h = { Accept: 'application/json' };
   if (NET.orcidToken) h.Authorization = 'Bearer ' + NET.orcidToken;
-  let res; try { res = await f(url, { headers: h }); } catch (e) { NET.log.push({ url, err: String(e.message || e) }); return { list: [], err: 'реестр ORCID не отвечает этой странице' }; }
+  let res; try { res = await tfetch(url, { headers: h }); } catch (e) { NET.log.push({ url, err: String(e.message || e) }); return { list: [], err: 'реестр ORCID не отвечает этой странице' + (e.timeout ? ' (' + e.message + ')' : '') }; }
   NET.log.push({ url, status: res.status });
   if (res.status === 401 || res.status === 403) return { list: [], err: 'реестр ORCID требует токен (поле «Токен ORCID» в настройках)' };
   if (res.status === 404) return { list: [], err: 'запись ORCID не найдена' };
@@ -140,14 +147,19 @@ async function authorWorks(who, yearFrom) {
   out.works = items.map(m => { const w = crWork(m, 'orcid'); return { doi: w.doi, title: w.title, year: w.year, type: w.type, journal: w.journal, issns: w.issns }; });
   out.source = 'Crossref'; out.partial = true; return out;
 }
-/* Проверка связи: по одному короткому запросу в каждую базу */
-async function pingAll() {
+/* Проверка связи: по одному короткому запросу в каждую базу, все одновременно, не дольше 12 с каждая.
+   onEach(i, результат) вызывается по мере ответов; итог — в прежнем порядке: Crossref, Белый список, ORCID, OpenAlex */
+const PING_MS = 12000;
+async function pingAll(onEach) {
   const res = [];
-  const one = async (name, url, ok) => { const t = Date.now(); try { const j = await getJson(url, 1); res.push({ name, ok: !!(j && ok(j)), ms: Date.now() - t, msg: j && ok(j) ? 'отвечает' : 'ответ не того вида' }); } catch (e) { res.push({ name, ok: false, ms: Date.now() - t, msg: e.message }); } };
-  await one('Crossref (поиск статей)', `${NET.crossref}/works?rows=1&select=DOI,title&query.bibliographic=nature`, j => j.message && Array.isArray(j.message.items));
-  await one('Сайт Белого списка (свежие уровни изданий)', `${NET.wl}/record-sources/0028-0836/level`, j => j.id != null || !!j.title);
-  { const t = Date.now(); const r = await orcidSearch('orcid:0000-0002-1825-0097'); res.push({ name: 'Реестр ORCID (поиск автора по Scopus ID, ResearcherID и имени)', ok: !r.err && r.list.length > 0, ms: Date.now() - t, msg: r.err || (r.list.length ? 'отвечает' : 'ответ не того вида') }); NET.useORCID = true; NET.orcidOff = ''; }
-  await one('OpenAlex (тип статьи, corresponding author, профиль автора)', `${NET.openalex}/works?per-page=1&select=id${oaParam()}`, j => Array.isArray(j.results));
+  const one = async (i, name, url, ok) => { const t = Date.now(); let r; try { const j = await getJson(url, 1, PING_MS); r = { name, ok: !!(j && ok(j)), ms: Date.now() - t, msg: j && ok(j) ? 'отвечает' : 'ответ не того вида' }; } catch (e) { r = { name, ok: false, ms: Date.now() - t, msg: e.message }; } res[i] = r; if (onEach) onEach(i, r); };
+  const orc = async () => { const t = Date.now(); const r = await orcidSearch('orcid:0000-0002-1825-0097', PING_MS); res[2] = { name: 'Реестр ORCID (поиск автора по Scopus ID, ResearcherID и имени)', ok: !r.err && r.list.length > 0, ms: Date.now() - t, msg: r.err || (r.list.length ? 'отвечает' : 'ответ не того вида') }; NET.useORCID = true; NET.orcidOff = ''; if (onEach) onEach(2, res[2]); };
+  await Promise.all([
+    one(0, 'Crossref (поиск статей)', `${NET.crossref}/works?rows=1&select=DOI,title&query.bibliographic=nature`, j => j.message && Array.isArray(j.message.items)),
+    one(1, 'Сайт Белого списка (свежие уровни изданий)', `${NET.wl}/record-sources/0028-0836/level`, j => j.id != null || !!j.title),
+    orc(),
+    one(3, 'OpenAlex (тип статьи, corresponding author, профиль автора)', `${NET.openalex}/works?per-page=1&select=id${oaParam()}`, j => Array.isArray(j.results)),
+  ]);
   return res;
 }
 /* ---------- Самопроверка: известные публикации с заранее записанными ответами ---------- */
@@ -186,4 +198,4 @@ async function runSelfCheck(onStep) {
   }
   return out;
 }
-if (typeof module !== 'undefined') module.exports = { oaShip, orcidExternalIds, NET, getJson, crWork, findWork, enrichOA, enrichWL, authorInfo, searchAuthors, authorByOrcid, authorByScopus, orcidSearch, runSelfCheck, SELF, authorWorks, cleanOrcid, pingAll };
+if (typeof module !== 'undefined') module.exports = { tfetch, PING_MS, oaShip, orcidExternalIds, NET, getJson, crWork, findWork, enrichOA, enrichWL, authorInfo, searchAuthors, authorByOrcid, authorByScopus, orcidSearch, runSelfCheck, SELF, authorWorks, cleanOrcid, pingAll };

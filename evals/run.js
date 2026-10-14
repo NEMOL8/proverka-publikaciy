@@ -2,7 +2,7 @@
 // Запуск: node evals/run.js
 const fs = require('fs'), path = require('path'); const B = path.join(__dirname, '..');
 const src = fs.readFileSync(B + '/src/core.js', 'utf8').replace(/if \(typeof module[^\n]*\n?$/m, '') + fs.readFileSync(B + '/src/net.js', 'utf8').replace(/if \(typeof module[^\n]*\n?$/m, '');
-const A = new Function(src + '\nreturn {corrOf,orgMatch,findDuplicates,instNames,oaShip,orcidExternalIds,KD,ST,loadRef,findJournal,splitEntries,parseEntry,titleScore,canonName,leaderVariants,sameSurname,authorPosition,journalVerdict,judgePub,judgeVariants,judgeProfileWork,detectLeader,parseAuthorInput,orcidValid,wlAt,passFilter,parseFIO,nameMatch,translitVariants,NET,crWork,findWork,enrichOA,enrichWL,authorInfo,searchAuthors,authorByOrcid,authorByScopus,orcidSearch,runSelfCheck,SELF,authorWorks,cleanOrcid,pingAll};')();
+const A = new Function(src + '\nreturn {getJson,tfetch,PING_MS,corrOf,orgMatch,findDuplicates,instNames,oaShip,orcidExternalIds,KD,ST,loadRef,findJournal,splitEntries,parseEntry,titleScore,canonName,leaderVariants,sameSurname,authorPosition,journalVerdict,judgePub,judgeVariants,judgeProfileWork,detectLeader,parseAuthorInput,orcidValid,wlAt,passFilter,parseFIO,nameMatch,translitVariants,NET,crWork,findWork,enrichOA,enrichWL,authorInfo,searchAuthors,authorByOrcid,authorByScopus,orcidSearch,runSelfCheck,SELF,authorWorks,cleanOrcid,pingAll};')();
 const DATA = JSON.parse(fs.readFileSync(B + '/data/ref.json', 'utf8'));
 // вымышленные издания для кейсов «квартиль по годам» (годы справочника: 2021–2025)
 const fake = (t, issn, h) => DATA.sj.push([t, issn, 0, '', 900000 + DATA.sj.length, ...h]);
@@ -368,5 +368,18 @@ eq('транслит / несколько написаний фамилии', A.
   eq('0.7 сеть / идентификаторы записи ORCID', [/pub\.orcid\.org\/v3\.0\/0000-0002-1825-0097\/external-identifiers/.test(urls[0]), ox.list.map(x => x.type + '=' + x.value).join(';'), ox.err], [true, 'Scopus Author ID=57000000000;ResearcherID=F-1234-2016', undefined]);
   N.fetch = async () => res(401, {}); ox = await A.orcidExternalIds('0000-0002-1825-0097'); eq('0.7 сеть / запись ORCID требует токен — сообщение', [ox.list.length, /токен/.test(ox.err || '')], [0, true]);
   N.fetch = async () => { throw new TypeError('Failed to fetch'); }; ox = await A.orcidExternalIds('0000-0002-1825-0097'); eq('0.7 сеть / реестр не отвечает — сообщение, без падения', [ox.list.length, !!ox.err], [0, true]); N.useORCID = true;
+
+  // ===== 0.7.4: ограничение времени запросов (ожидания записаны до прогона) =====
+  { const hang = () => new Promise(() => { });
+    N.fetch = hang; let t = Date.now(), er = null; try { await A.tfetch('https://x', {}, 300); } catch (e) { er = e; }
+    eq('0.7.4 / зависший сервер: запрос обрывается по времени', [!!(er && er.timeout), /нет ответа за 0 с|нет ответа/.test(er && er.message), Date.now() - t < 1500], [true, true, true]);
+    t = Date.now(); er = null; try { await A.getJson('https://x', 1, 300); } catch (e) { er = e; }
+    eq('0.7.4 / getJson: зависание — ошибка «нет ответа», вид net', [er && er.kind, /нет ответа/.test(er && er.message), Date.now() - t < 1500], ['net', true, true]);
+    N.useORCID = true; N.orcidOff = ''; t = Date.now(); let o = await A.orcidSearch('x', 300);
+    eq('0.7.4 / реестр ORCID завис: сообщение, без зависания', [o.list.length, /нет ответа/.test(o.err || ''), Date.now() - t < 1500], [0, true, true]); N.useORCID = true; N.orcidOff = '';
+    // проверка связи: Белый список висит, остальные отвечают — итог не дольше PING_MS + 2 с, порядок прежний
+    N.fetch = async u => /journalrank|rcsi/.test(u) ? hang() : (/orcid/.test(u) ? res(200, { 'expanded-result': [{ 'orcid-id': '0000-0002-1825-0097' }] }) : (/openalex/.test(u) ? res(200, { results: [] }) : res(200, { message: { items: [] } })));
+    const seen = []; t = Date.now(); const pr = await A.pingAll((i, r) => seen.push(i)); const dt = Date.now() - t;
+    eq('0.7.4 / проверка связи: базы опрашиваются одновременно, зависшая не держит остальных', [pr.map(r => r.ok).join(), seen.indexOf(1) === 3, dt < A.PING_MS + 2000, dt >= A.PING_MS - 200], ['true,false,true,true', true, true, true]); }
   console.log(`Пройдено ${pass} из ${pass + fail}`); fails.forEach(f => console.log('  НЕ ПРОЙДЕНО — ' + f)); process.exit(fail ? 1 : 0);
 })();

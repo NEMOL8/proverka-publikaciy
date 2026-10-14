@@ -188,6 +188,13 @@ const WANT_PROFILE = { ok: 2, check: 1, total: 3, all: 4 };
   const gr = await pg.evaluate(() => ({ st: G.items.map(it => grpState(it.S)), rows: [...document.querySelectorAll('#outGroup > table.t tr')].slice(1).map(tr => [...tr.children].map(td => td.innerText.trim())), det: document.querySelectorAll('#outGroup details.gitem').length }));
   T('0.7 группа: первый найден, второй — нет; за 2021–2025 у первого 3 публикации, Q1 — 2', JSON.stringify(gr.st) === '["found","none"]' && gr.rows[0][3] === '3' && gr.rows[0][4] === '2' && /не найден/.test(gr.rows[1][2]) && gr.det === 2, gr);
   await pg.screenshot({ path: B + '/evals/shot_group.png', fullPage: true });
+  // 0.7.4: «Проверить связь» не зависает, если одна база молчит (ожидания записаны до прогона)
+  await pg.unroute(/journalrank\.rcsi\.science/); await pg.route(/journalrank\.rcsi\.science/, () => { /* не отвечаем никогда */ });
+  { const t = Date.now(); await pg.evaluate(() => { document.querySelector('details:has(#ping)').open = true; }); await pg.click('#ping');
+    const mid = await pg.evaluate(() => document.getElementById('pingres').innerText);
+    await pg.waitForFunction(() => !document.getElementById('ping').disabled, null, { timeout: 30000 }); const dt = Date.now() - t; const txt = await pg.evaluate(() => document.getElementById('pingres').innerText);
+    T('проверка связи: зависший сайт Белого списка — итог за 12–16 с, он «не отвечает», остальные «отвечает»', dt < 16000 && /не отвечает Сайт Белого списка/.test(txt) && (txt.match(/отвечает Crossref|отвечает Реестр|отвечает OpenAlex/g) || []).length === 3, [dt, txt]);
+    T('проверка связи: пока ждём, видно «проверяю…» по каждой базе', /проверяю/.test(mid), mid); }
   // 9. нет связи
   await pg.unroute(/api\.crossref\.org|api\.openalex\.org/); await pg.unroute(/journalrank\.rcsi\.science/); await pg.route(/api\.crossref\.org|api\.openalex\.org|journalrank/, r => r.abort()); MODE = 'two';
   await pg.fill('#list', PUBS.map((p, i) => `${i + 1}. ${p[0]} ${p[1]}. ${p[2]}. ${p[3]}. ${p[4]}`).join('\n')); await pg.click('#go'); await pg.waitForFunction(() => /Готово|неполный/.test(document.getElementById('status').textContent) && !BUSY, null, { timeout: 60000 });
