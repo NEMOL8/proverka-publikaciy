@@ -15,12 +15,12 @@ if OAK and not re.fullmatch(r'[A-Za-z0-9_-]{8,128}',OAK): sys.exit('openalex_key
 app='const ORCID_BUILTIN = '+json.dumps(TOK)+', OA_BUILTIN = '+json.dumps(OAK)+';\n'+''.join(js(B+'src/'+f)+'\n' for f in ['core.js','net.js','ocr.js','ui.js'])
 print('токен ORCID:', 'встроен' if TOK else 'нет', '; ключ OpenAlex:', 'встроен' if OAK else 'нет')
 tpl=open(B+'src/template.html',encoding='utf-8').read()
-# фирменный шрифт Circe (брендбук Инконсалт): в одной странице — внутри, на сайте — файлами
-FW=[('Circe-Regular',400),('Circe-Bold',700),('Circe-ExtraBold',800)]
+# Шрифт Circe и логотип убраны 14.10.2026 (репозиторий открытый, лицензия шрифта) — системные шрифты
+FW=[]
 import urllib.parse
 NET='"data:image/svg+xml,'+urllib.parse.quote(open(B+'fonts/net.svg',encoding='utf-8').read())+'"'
 tpl=tpl.replace('/*NET*/',NET)
-ff=lambda src: '<style>'+''.join(f"@font-face{{font-family:'Circe';src:url({src(n)}) format('woff2');font-weight:{w};font-style:normal;font-display:swap}}" for n,w in FW)+'</style>'
+ff=lambda src: '' if not FW else '<style>'+''.join(f"@font-face{{font-family:'Circe';src:url({src(n)}) format('woff2');font-weight:{w};font-style:normal;font-display:swap}}" for n,w in FW)+'</style>'
 if os.path.isdir(B+'dist'): shutil.rmtree(B+'dist')
 os.makedirs(B+'dist/site/data'); os.makedirs(B+'dist/site/ocr'); os.makedirs(B+'dist/site/fonts')
 # 1. одна страница
@@ -31,15 +31,14 @@ if ocr:
     out+=f'<script type="application/octet-stream" id="ocr-worker">{b64(N+"tesseract.js/dist/worker.min.js")}</script>\n'
     for l in ('rus','eng'): out+=f'<script type="application/octet-stream" id="ocr-{l}">{b64(N+"@tesseract.js-data/"+l+"/4.0.0_best_int/"+l+".traineddata.gz")}</script>\n'
 out+=f'<script>\n{app}</script>'
-dst=B+'dist/Проверка_публикаций_'+ver+'.html'; open(dst,'w',encoding='utf-8').write(tpl.replace('/*FONTS*/',ff(lambda n:'data:font/woff2;base64,'+b64(B+'fonts/'+n+'.woff2'))).replace('/*LOGO*/','data:image/png;base64,'+b64(B+'fonts/logo.png')).replace('/*LIBS*/',out)); print(dst, round(os.path.getsize(dst)/1e6,1),'МБ')
+dst=B+'dist/Проверка_публикаций_'+ver+'.html'; open(dst,'w',encoding='utf-8').write(tpl.replace('/*FONTS*/',ff(lambda n:'data:font/woff2;base64,'+b64(B+'fonts/'+n+'.woff2'))).replace('/*LIBS*/',out)); print(dst, round(os.path.getsize(dst)/1e6,1),'МБ')
 # 2. сайт
 S=B+'dist/site/'
 open(S+'app.js','w',encoding='utf-8').write(app)
-page=tpl.replace('/*FONTS*/',ff(lambda n:'fonts/'+n+'.woff2')).replace('/*LOGO*/','fonts/logo.png').replace('/*LIBS*/',f'<script>window.PC_SITE = true;</script>\n<script src="app.js?v={ver}"></script>')
+page=tpl.replace('/*FONTS*/',ff(lambda n:'fonts/'+n+'.woff2')).replace('/*LIBS*/',f'<script>window.PC_SITE = true;</script>\n<script src="app.js?v={ver}"></script>')
 open(S+'index.html','w',encoding='utf-8').write(page)
 shutil.copy(B+'data/ref.json',S+'data/ref.json')
 for n,_ in FW: shutil.copy(B+'fonts/'+n+'.woff2',S+'fonts/'+n+'.woff2')
-shutil.copy(B+'fonts/logo.png',S+'fonts/logo.png')
 for f in ['tesseract.min.js','worker.min.js']: shutil.copy(N+'tesseract.js/dist/'+f,S+'ocr/'+f)
 # ядро распознавания: worker сам выбирает вариант по возможностям браузера (с SIMD или без), модель — только LSTM
 for f in ['tesseract-core-simd-lstm.wasm.js','tesseract-core-lstm.wasm.js']: shutil.copy(N+'tesseract.js-core/'+f,S+'ocr/'+f)
