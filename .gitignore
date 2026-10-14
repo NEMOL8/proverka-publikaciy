@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 dist/
 openalex_key.txt
 orcid_token.txt
