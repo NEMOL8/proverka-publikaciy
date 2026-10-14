@@ -4,20 +4,16 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&am
 const chip = (st, text) => `<span class="chip ${st}">${esc(text || ST_NAME[st])}</span>`;
 let LAST = null, BUSY = false;
 
+/* Ошибки на странице показываются наверху — по снимку экрана видно, что сломалось */
+window.addEventListener('error', e => showErr((e.message || 'ошибка') + (e.filename ? ' (' + String(e.filename).split('/').pop() + ':' + e.lineno + ')' : '')));
+window.addEventListener('unhandledrejection', e => showErr('ошибка: ' + ((e.reason && e.reason.message) || e.reason)));
+function showErr(t) { const b = document.getElementById('pgerr'); if (!b) return; b.style.display = ''; b.textContent = 'Ошибка на странице — пришлите снимок этой строки: ' + t; }
 async function init() {
   $('ver').textContent = `версия ${VERSION} от ${VERSION_DATE}`;
   $('changes').innerHTML = CHANGES.map(c => `<p><b>${c[0]}</b> <span class="dim">${c[1]}</span></p><ul>${c[2].map(x => '<li>' + esc(x) + '</li>').join('')}</ul>`).join('');
-  const btns = ['go', 'ago', 'ggo'];
-  try {
-    const el = $('ref-data'); let data;
-    if (el) data = JSON.parse(el.textContent);
-    else { btns.forEach(b => $(b).disabled = true); $('refinfo').textContent = 'Загружаю справочники SCImago и Белого списка (около 8 МБ, один раз — дальше из кеша браузера)…'; const r = await fetch('data/ref.json?v=' + VERSION); if (!r.ok) throw new Error('ответ ' + r.status); data = await r.json(); }
-    loadRef(data);
-  } catch (e) { $('refinfo').innerHTML = chip('unk', 'справочники не загружены') + ' ' + esc(e.message || e) + '. Обновите страницу.'; return; }
-  btns.forEach(b => $(b).disabled = false);
   const now = new Date().getFullYear();
   FLT.grp.yFrom = now - KD.years; FLT.grp.yTo = now - 1;
-  $('refinfo').textContent = `Справочники: SCImago за ${REF.sjYears[0]}–${REF.sjYear} годы (${REF.sj.length} изданий), Белый список на ${REF.wlDate} (${REF.wl.length} изданий).`;
+  // кнопки и поля работают сразу; поиск включается, когда загружены справочники
   $('file').addEventListener('change', e => addImages([...e.target.files]));
   $('afile').addEventListener('change', e => authorImage([...e.target.files]));
   $('gfile').addEventListener('change', e => groupImage([...e.target.files]));
@@ -33,6 +29,30 @@ async function init() {
   if (ORCID_BUILTIN) { $('orcidToken').placeholder = 'встроенный токен уже подключён — поле можно не заполнять'; $('orcidNote').textContent = 'В эту сборку встроен токен ORCID. Своё значение в поле заменит его только в этом браузере.'; }
   $('org').addEventListener('input', () => { try { localStorage.setItem('pc_org', $('org').value); } catch (e) { } });
   if (!ocrAvailable()) { $('drop').innerHTML = 'Распознавание снимков в эту сборку не включено — вставьте список текстом.'; $('afile').style.display = 'none'; $('gfile').style.display = 'none'; }
+  await loadData();
+}
+/* Справочники: в одной странице — внутри, на сайте — файл data/ref.json (около 8 МБ) с показом хода загрузки и ограничением по времени */
+async function loadData() {
+  const btns = ['go', 'ago', 'ggo'];
+  try {
+    const el = $('ref-data'); let data;
+    if (el) data = JSON.parse(el.textContent);
+    else {
+      btns.forEach(b => $(b).disabled = true);
+      const info = t => { $('refinfo').textContent = t; };
+      info('Загружаю справочники SCImago и Белого списка (около 8 МБ, один раз — дальше из кеша браузера)…');
+      const r = await tfetch('data/ref.json?v=' + VERSION, {}, 120000); if (!r.ok) throw new Error('сайт ответил ' + r.status);
+      const total = +r.headers.get('content-length') || 0;
+      if (r.body && r.body.getReader) {
+        const rd = r.body.getReader(), parts = []; let got = 0;
+        for (;;) { const { done, value } = await rd.read(); if (done) break; parts.push(value); got += value.length; info(`Загружаю справочники: ${Math.round(got / 1e6 * 10) / 10} МБ${total ? ' из ' + Math.round(total / 1e6 * 10) / 10 : ''}…`); }
+        const all = new Uint8Array(got); let o = 0; parts.forEach(p => { all.set(p, o); o += p.length; }); data = JSON.parse(new TextDecoder().decode(all));
+      } else data = await r.json();
+    }
+    loadRef(data);
+  } catch (e) { $('refinfo').innerHTML = chip('unk', 'справочники не загружены') + ' ' + esc(e.message || e) + '. Поиск статей не работает, «Проверить связь» работает. <button class="sec small" onclick="loadData()">Повторить</button>'; return; }
+  btns.forEach(b => $(b).disabled = false);
+  $('refinfo').textContent = `Справочники: SCImago за ${REF.sjYears[0]}–${REF.sjYear} годы (${REF.sj.length} изданий), Белый список на ${REF.wlDate} (${REF.wl.length} изданий).`;
 }
 const W = { entries: null, works: [], pubs: [], netDown: '', auto: null, dups: [] };
 const newS = () => ({ prof: null, cands: null, orcCands: null, similar: null, msgs: [], parsed: null, orcIds: null, hirsch: {} });
@@ -91,7 +111,7 @@ function renderAll() { renderList(); renderAuthor(); renderGroup(); }
 
 /* ----- Режим 1: список публикаций ----- */
 async function runList() {
-  if (BUSY) return;
+  if (BUSY || !REF) return;
   const entries = splitEntries($('list').value);
   if (!entries.length) { $('status').textContent = 'Список пуст: вставьте текст или снимок.'; return; }
   BUSY = true; $('go').disabled = true; applyNet(); NET.log = [];
@@ -116,12 +136,27 @@ const lnk = (u, t) => `<a target="_blank" rel="noopener" href="${esc(u)}">${esc(
 const numOf = (e, i) => e.num != null ? e.num : (W.numbered ? '—' : i + 1);
 
 /* ----- Квартиль и Белый список на год публикации, рядом текущее ----- */
-function quartText(jv, sj, short) {
-  if (!sj) return chip('unk', 'нет в SCImago');
+/* Индексация издания по данным Белого списка (WoS Core Collection, Scopus, RSCI) */
+function idxText(wl) {
+  if (!wl) return '<span class="dim">индексация: нет данных (издания нет в Белом списке)</span>';
+  const f = (n, v) => `${n} — ${v ? '<b>да</b>' : 'нет'}`;
+  return `<span class="dim">индексация (по Белому списку): ${f('WoS CC', wl.wos)}, ${f('Scopus', wl.scopus)}, ${f('RSCI', wl.rsci)}</span>`;
+}
+/* Квартиль WoS (JCR): открытого источника нет — ссылка для проверки и поле, куда вписать значение; хранится по ISSN до перезагрузки страницы */
+const JCRQ = {};
+const issnKey = issns => (issns || []).map(normIssn).filter(Boolean).sort().join(' ');
+function jcrField(issns) {
+  const k = issnKey(issns); if (!k) return '';
+  const v = JCRQ[k] || '', is = fmtIssn(k.split(' ')[0]);
+  return `<br><span class="dim">WoS (JCR):</span> <input type="text" class="yr q" value="${esc(v)}" placeholder="вписать" onchange="setJcr('${k}',this.value)"> <span class="dim">${lnk('https://mjl.clarivate.com/search-results?issn=' + is, 'есть ли в WoS')} · ${lnk('https://jcr.clarivate.com/', 'JCR')} (квартиль — только по подписке)</span>`;
+}
+function setJcr(k, v) { v = String(v || '').trim(); if (v) JCRQ[k] = v; else delete JCRQ[k]; renderList(); renderAuthor(); renderGroup(); }
+function quartText(jv, sj, short, wl, issns) {
+  if (!sj) return chip('unk', 'нет в SCImago') + (wl !== undefined ? '<br>' + idxText(wl) : '') + (issns ? jcrField(issns) : '');
   let h = `${qChip(jv.qY)} <span class="dim">${jv.sjYear}${jv.sjExact ? '' : ' (за год публикации данных нет)'}</span>`;
   if (jv.yL !== jv.sjYear && jv.qL !== jv.qY) h += `<br>${chip('check', 'сейчас ' + (jv.qL ? 'Q' + jv.qL : 'без квартиля'))} <span class="dim">${jv.yL}</span>`;
   if (!short) h += `<br><span class="dim">${esc(jv.hist)}</span>`;
-  return h + ` <span class="dim">${lnk(`https://www.scimagojr.com/journalsearch.php?q=${sj.sid}&tip=sid`, 'SCImago')}</span>`;
+  return h + ` <span class="dim">${lnk(`https://www.scimagojr.com/journalsearch.php?q=${sj.sid}&tip=sid`, 'SCImago')}</span>` + (issns ? jcrField(issns) : '');
 }
 function wlText(wl, year, short) {
   if (!wl) return nchip('нет в списке');
@@ -204,8 +239,8 @@ function renderList() {
     if (!w) { h += `<tr><td>${numOf(e, i)}</td><td>${c1}${chip('unk', p.found === 'no' ? 'не найдена' : 'не проверена')}${p.near ? ` <span class="dim">ближайшая: «${esc(p.near.title)}»</span>` : ''}</td><td colspan="5" class="dim">Статья не найдена в открытой базе — квартиль и остальное по ней не определены.</td><td>${nh}</td></tr>`; return; }
     const url = 'https://doi.org/' + w.doi;
     c1 += `${p.found === 'ok' ? nchip(w.via === 'doi' ? 'найдена по DOI' : 'найдена') : chip('check', 'похожая')} ${lnk(url, w.title)}<br>${nchip(w.year || 'год ?')} ${p.typeName ? nchip(p.typeName) : ''}` + (w.via !== 'doi' ? ` <span class="dim">совпадение названия ${Math.round(w.score * 100)} %</span>` : '') + `<br>${lnk(url)}`;
-    const jc = `<b>${esc(w.journal || 'издание не указано')}</b>` + (w.issns.length ? '<br><span class="dim">ISSN ' + w.issns.map(x => esc(fmtIssn(normIssn(x)))).join(', ') + '</span>' : '');
-    h += `<tr><td>${numOf(e, i)}</td><td>${c1}</td><td>${jc}</td><td>${quartText(p.jv, p.j.sj)}</td><td>${wlCell(p)}</td><td>${ifCell(p)}</td><td>${authorsCell(p)}</td><td>${nh}</td></tr>`;
+    const jc = `<b>${esc(w.journal || 'издание не указано')}</b>` + (w.issns.length ? '<br><span class="dim">ISSN ' + w.issns.map(x => esc(fmtIssn(normIssn(x)))).join(', ') + '</span>' : '') + (p.j.sj ? '<br>' + idxText(p.j.wl) : '');
+    h += `<tr><td>${numOf(e, i)}</td><td>${c1}</td><td>${jc}</td><td>${quartText(p.jv, p.j.sj, false, p.j.wl, w.issns)}</td><td>${wlCell(p)}</td><td>${ifCell(p)}</td><td>${authorsCell(p)}</td><td>${nh}</td></tr>`;
   });
   if (!rows.length) h += `<tr><td colspan="8" class="dim">Под фильтр не подходит ни одна статья.</td></tr>`;
   h += `</table><p class="dim">Запросов в интернет: ${NET.log.length}.${NET.oaOff ? ' OpenAlex отключился: ' + esc(NET.oaOff) + '.' : ''}${NET.wlOff ? ' Сайт Белого списка не ответил (' + esc(NET.wlOff) + ') — уровни взяты из справочника от ' + REF.wlDate + '.' : ''}</p>`;
@@ -264,7 +299,7 @@ async function searchAuthor(S, input, st) {
   try { await fetchOrcidIds(S); } catch (e) { }
 }
 async function runAuthor() {
-  if (BUSY) return; BUSY = true; $('ago').disabled = true; applyNet(); W.auto = null; AU = newS();
+  if (BUSY || !REF) return; BUSY = true; $('ago').disabled = true; applyNet(); W.auto = null; AU = newS();
   await searchAuthor(AU, $('author').value, t => { $('astatus').textContent = t; });
   if (W.entries) rejudge();
   BUSY = false; $('ago').disabled = false; $('astatus').textContent = ''; renderAll();
@@ -395,7 +430,7 @@ function authorBody(S, k, fid, withFilter) {
     else if (!rows.length) h += '<p class="dim">Под фильтр не подходит ни одна статья.</p>';
     else h += `<table class="t"><tr><th style="width:5%">Год</th><th>Статья и ссылка</th><th style="width:14%">Издание</th><th style="width:11%">Квартиль</th><th style="width:11%">Белый список</th><th style="width:6%">Показатель</th><th style="width:9%">Место автора</th><th style="width:10%">Corresponding</th><th style="width:13%">Организация${orgOn ? ' (сверка)' : ''}</th></tr>` + rows.map(x => {
       const url = wLink(x.w);
-      return `<tr><td>${x.w.year || ''}</td><td>${esc(x.w.title)}${k < 0 && listed.has(x.w.doi) && x.w.doi ? ' ' + nchip('в списке') : ''}${x.w.type === 'review' ? ' <span class="dim">обзор</span>' : ''}<br>${url ? lnk(url) : chip('unk', 'ссылки нет')}</td><td>${esc(x.w.journal)}</td><td>${quartText(x.jv, x.j.sj, true)}</td><td>${wlText(x.j.wl, x.w.year, true)}</td><td>${x.jv.cpd != null ? fmtNum(x.jv.cpd) : ''}</td><td class="dim">${esc(x.pos || '')}</td><td>${corrChip(x.corrSt, x.corrNames)}</td><td class="dim">${orgHtml(orgOf(x.me))}</td></tr>`;
+      return `<tr><td>${x.w.year || ''}</td><td>${esc(x.w.title)}${k < 0 && listed.has(x.w.doi) && x.w.doi ? ' ' + nchip('в списке') : ''}${x.w.type === 'review' ? ' <span class="dim">обзор</span>' : ''}<br>${url ? lnk(url) : chip('unk', 'ссылки нет')}</td><td>${esc(x.w.journal)}</td><td>${quartText(x.jv, x.j.sj, true, x.j.wl)}</td><td>${wlText(x.j.wl, x.w.year, true)}</td><td>${x.jv.cpd != null ? fmtNum(x.jv.cpd) : ''}</td><td class="dim">${esc(x.pos || '')}</td><td>${corrChip(x.corrSt, x.corrNames)}</td><td class="dim">${orgHtml(orgOf(x.me))}</td></tr>`;
     }).join('') + '</table>';
   } else if (S.cands || S.orcCands) {
     const c = S.cands || [], o = S.orcCands || [];
@@ -426,7 +461,7 @@ async function groupImage(files) {
   BUSY = false; countGroup();
 }
 async function runGroup() {
-  if (BUSY) return; const lines = grpLines(); if (!lines.length) { $('gstatus').textContent = 'Введите авторов — по одному на строку.'; return; }
+  if (BUSY || !REF) return; const lines = grpLines(); if (!lines.length) { $('gstatus').textContent = 'Введите авторов — по одному на строку.'; return; }
   BUSY = true; $('ggo').disabled = true; applyNet(); G.items = lines.map(input => ({ input, S: newS() }));
   for (let k = 0; k < G.items.length; k++) { const it = G.items[k]; await searchAuthor(it.S, it.input, t => { $('gstatus').textContent = `Автор ${k + 1} из ${G.items.length}: ${t}`; }); renderGroup(); await sleep(NET.pause); }
   BUSY = false; $('ggo').disabled = false; $('gstatus').textContent = 'Готово.'; renderGroup();
@@ -464,11 +499,12 @@ function renderGroup() {
 /* ----- Копирование ----- */
 const tsvRow = a => a.map(x => String(x == null ? '' : x).replace(/[\t\n]/g, ' ')).join('\t');
 const wlS = (wl, year) => { if (!wl) return 'нет'; const a = wlAt(wl, year); return (a.excluded ? 'исключён ' + wl.disc : (a.lv ? a.lv + ' (' + a.y + ')' : 'без уровня')) + (!a.excluded && (a.curExcl || a.cur !== a.lv) ? '; сейчас ' + (a.curExcl ? 'исключён' : a.cur || 'без уровня') : ''); };
+const idxS = wl => !wl ? 'нет данных' : ['WoS CC', 'Scopus', 'RSCI'].filter((n, i) => [wl.wos, wl.scopus, wl.rsci][i]).join(', ') || 'ни в одной';
 const corrS = w => !w.oa ? 'нет данных' : (!w.corr || !w.corr.known ? 'в базе не указан' : w.corr.names.join(', '));
 const orgS = me => { const o = orgOf(me); return o.names.join('; ') + (o.st && $('org').value.trim() ? ' [' + ORG_T[o.st] + ']' : ''); };
 function copyList() {
-  if (!W.entries) return; const ids = auIds().length; const L = [tsvRow(['№', 'Найденная статья', 'Ссылка', 'Год', 'Тип', 'Издание', 'ISSN', 'Квартиль (год публикации)', 'Квартиль сейчас (' + REF.sjYear + ')', 'Белый список (год публикации)', 'Цит. на документ SCImago', 'Импакт-фактор в списке', 'Corresponding (OpenAlex)'].concat(ids ? ['Найденный автор — corresponding', 'Организация автора'] : []).concat(['Первый автор', 'Последний автор', 'Примечания']))];
-  listRows().forEach(({ p, i }) => { const w = p.work, jv = p.jv || {}, a = w ? w.authors : [], m = w ? listMe(w) : null; L.push(tsvRow([numOf(p.entry, i), w ? w.title : 'не найдена', w ? 'https://doi.org/' + w.doi : '', w ? w.year : '', w ? p.typeName : '', w ? w.journal : '', w ? w.issns.join(', ') : '', w && p.j.sj ? (jv.qY ? 'Q' + jv.qY : 'нет') + ' (' + jv.sjYear + ')' : '', w && p.j.sj && jv.qL ? 'Q' + jv.qL : '', w ? wlS(p.j.wl, w.year) : '', w && jv.cpd != null ? fmtNum(jv.cpd) : '', p.declIF != null ? fmtNum(p.declIF) : '', w ? corrS(w) : ''].concat(ids ? [m && m.me ? CORR_T[m.corr] : 'нет данных', m && m.me ? orgS(m.me) : ''] : []).concat([aName(a[0]), a.length > 1 ? aName(a[a.length - 1]) : '', p.notes.concat(dupNotes(i)).join('; ')]))); });
+  if (!W.entries) return; const ids = auIds().length; const L = [tsvRow(['№', 'Найденная статья', 'Ссылка', 'Год', 'Тип', 'Издание', 'ISSN', 'Квартиль (год публикации)', 'Квартиль сейчас (' + REF.sjYear + ')', 'Квартиль WoS (JCR), вписано', 'Индексация (Белый список)', 'Белый список (год публикации)', 'Цит. на документ SCImago', 'Импакт-фактор в списке', 'Corresponding (OpenAlex)'].concat(ids ? ['Найденный автор — corresponding', 'Организация автора'] : []).concat(['Первый автор', 'Последний автор', 'Примечания']))];
+  listRows().forEach(({ p, i }) => { const w = p.work, jv = p.jv || {}, a = w ? w.authors : [], m = w ? listMe(w) : null; L.push(tsvRow([numOf(p.entry, i), w ? w.title : 'не найдена', w ? 'https://doi.org/' + w.doi : '', w ? w.year : '', w ? p.typeName : '', w ? w.journal : '', w ? w.issns.join(', ') : '', w && p.j.sj ? (jv.qY ? 'Q' + jv.qY : 'нет') + ' (' + jv.sjYear + ')' : '', w && p.j.sj && jv.qL ? 'Q' + jv.qL : '', w ? JCRQ[issnKey(w.issns)] || '' : '', w ? idxS(p.j.wl) : '', w ? wlS(p.j.wl, w.year) : '', w && jv.cpd != null ? fmtNum(jv.cpd) : '', p.declIF != null ? fmtNum(p.declIF) : '', w ? corrS(w) : ''].concat(ids ? [m && m.me ? CORR_T[m.corr] : 'нет данных', m && m.me ? orgS(m.me) : ''] : []).concat([aName(a[0]), a.length > 1 ? aName(a[a.length - 1]) : '', p.notes.concat(dupNotes(i)).join('; ')]))); });
   toClip(L.join('\n'), 'status');
 }
 const profHead = () => ['Год', 'Статья', 'Ссылка', 'Издание', 'Квартиль (год публикации)', 'Квартиль сейчас (' + REF.sjYear + ')', 'Белый список (год публикации)', 'Цит. на документ', 'Место автора', 'Corresponding', 'Организация'];

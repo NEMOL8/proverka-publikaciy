@@ -94,6 +94,14 @@ const WANT_PROFILE = { ok: 2, check: 1, total: 3, all: 4 };
   const cnt = await pg.evaluate(() => document.querySelector('#outList .cnt').innerText); T('список: счётчик «показано 5 из 6»', /5\s+из 6/.test(cnt), cnt);
   await pg.evaluate(() => resetFlt('list')); sl = await shownList(); T('список: сброс фильтра — все 6', sl.length === 6, sl);
   await pg.evaluate(() => { setFlt('au', 'q', '1', true); setFlt('au', 'wl', '1', true); }); T('автор: Q1 или БС 1 — 3 статьи из 4', await auRows() === 3, await auRows()); await pg.evaluate(() => resetFlt('au'));
+  // 0.7.7: квартили не только SCImago (ожидания записаны до прогона): ЖТФ (№ 5) нет в SCImago — показана индексация по Белому списку и поле JCR; доклад (№ 4) — в Белом списке нет, «индексация: нет данных»
+  { const c5 = await pg.evaluate(() => document.querySelectorAll('#outList table.t tr')[5].children[3].innerText);
+    const c4 = await pg.evaluate(() => document.querySelectorAll('#outList table.t tr')[4].children[2].innerText);
+    T('нет в SCImago: видна индексация по Белому списку и поле квартиля WoS (JCR)', /нет в SCImago/.test(c5) && /индексация \(по Белому списку\): WoS CC — (да|нет), Scopus — (да|нет), RSCI — (да|нет)/.test(c5) && /WoS \(JCR\)/.test(c5), c5);
+    T('издания нет в Белом списке: «индексация: нет данных»', /индексация: нет данных/.test(c4), c4);
+    await pg.evaluate(() => setJcr(issnKey(W.pubs[4].work.issns), 'Q3'));
+    const jv = await pg.evaluate(() => [...document.querySelectorAll('#outList table.t tr')[5].children[3].querySelectorAll('input')].map(x => x.value).join());
+    T('квартиль WoS, вписанный вручную, сохраняется после перерисовки', jv === 'Q3', jv); await pg.evaluate(() => setJcr(issnKey(W.pubs[4].work.issns), '')); }
   // 2а. corresponding и ссылки
   const corr = await pg.evaluate(() => [...document.querySelectorAll('#outList table.t tr')].slice(1, 3).map(tr => tr.children[6].innerText.split('\n')[0]));
   T('corresponding: отмечен в базе — имя; не отмечен — «в базе не указан», без подстановки', /Anna V\. Sokolova/.test(corr[0]) && /не указан/.test(corr[1]), corr);
@@ -218,6 +226,14 @@ const WANT_PROFILE = { ok: 2, check: 1, total: 3, all: 4 };
   const ts = Date.now(); await ps.setInputFiles('#file', shot); await ps.waitForFunction(() => /распознан|не распознан/.test(document.getElementById('ocrmsg').textContent) && !BUSY, null, { timeout: 180000 });
   const sn = await ps.evaluate(() => [document.getElementById('ocrmsg').textContent, splitEntries(document.getElementById('list').value).length]);
   T('сайт: распознавание подгружается при первом снимке и читает список (6 записей)', /Снимок распознан/.test(sn[0]) && sn[1] === 6, sn); console.log(`Сайт: распознавание с загрузкой — ${Math.round((Date.now() - ts) / 1000)} с`);
+  T('сайт: полоса ошибок скрыта', await ps.evaluate(() => document.getElementById('pgerr').style.display === 'none'), 'видна');
+  // справочник не загрузился: сообщение и «Повторить», кнопка «Проверить связь» работает (ожидания записаны до прогона)
+  { const pf = await br.newPage({ viewport: { width: 1200, height: 800 } }); await pf.route(/data\/ref\.json/, r => r.fulfill({ status: 500, body: 'x' })); await pf.route(/crossref|openalex|orcid|journalrank/, r => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: '{}' }));
+    await pf.goto('http://localhost:8765/'); await pf.waitForFunction(() => /не загружены/.test(document.getElementById('refinfo').textContent), null, { timeout: 30000 });
+    const st = await pf.evaluate(() => [document.getElementById('refinfo').innerText, document.getElementById('go').disabled, !!document.querySelector('#refinfo button')]);
+    await pf.evaluate(() => { document.querySelector('details:has(#ping)').open = true; }); await pf.click('#ping'); await pf.waitForFunction(() => !document.getElementById('ping').disabled, null, { timeout: 30000 });
+    const pr = await pf.evaluate(() => document.getElementById('pingres').innerText);
+    T('сайт: справочник не загрузился — сообщение, «Повторить», поиск выключен, «Проверить связь» работает', /справочники не загружены/.test(st[0]) && st[1] === true && st[2] && /Crossref/.test(pr), [st, pr.slice(0, 120)]); await pf.close(); }
   T('сайт: без ошибок страницы', serr.length === 0, serr); srv.close();
   console.log('Ошибки страницы:', errs.length ? errs : 'нет'); console.log(`Распознавание списка: ${ocrSec} с`);
   out.forEach(x => console.log(x));
