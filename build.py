@@ -44,6 +44,7 @@ for f in ['tesseract.min.js','worker.min.js']: shutil.copy(N+'tesseract.js/dist/
 # ядро распознавания: worker сам выбирает вариант по возможностям браузера (с SIMD или без), модель — только LSTM
 for f in ['tesseract-core-simd-lstm.wasm.js','tesseract-core-lstm.wasm.js']: shutil.copy(N+'tesseract.js-core/'+f,S+'ocr/'+f)
 for l in ('rus','eng'): shutil.copy(N+'@tesseract.js-data/'+l+'/4.0.0_best_int/'+l+'.traineddata.gz',S+'ocr/'+l+'.traineddata.gz')
+open(S+'.nojekyll','w').write('')  # GitHub Pages: отдавать файлы как есть
 open(S+'robots.txt','w').write('User-agent: *\nDisallow: /\n')
 open(S+'_headers','w').write('/*\n  X-Robots-Tag: noindex, nofollow\n  Referrer-Policy: no-referrer\n/index.html\n  Cache-Control: no-cache\n/\n  Cache-Control: no-cache\n/data/*\n  Cache-Control: public, max-age=86400\n/fonts/*\n  Cache-Control: public, max-age=31536000\n/ocr/*\n  Cache-Control: public, max-age=31536000, immutable\n')
 tot=sum(os.path.getsize(os.path.join(d,f)) for d,_,fs in os.walk(S) for f in fs)
