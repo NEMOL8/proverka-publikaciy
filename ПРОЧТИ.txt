@@ -23,6 +23,9 @@
 
 Обновление справочников (раз в год для SCImago, по мере выхода для Белого списка):
   python3 mkdata.py journalrank_ДАТА.json scimagojr_2021.csv scimagojr_2022.csv … (все годы сразу)
+  или добавить годы SCImago к готовому data/ref.json (Белый список не трогается):
+  python3 mkdata_add.py "scimagojr 2006.csv" … "scimagojr 2020.csv"
+  Сейчас в справочнике SCImago 2006–2025 (0.7.9).
   npm install && python3 build.py
 Ключи (с 0.7.3): если рядом с build.py лежит openalex_key.txt (ключ OpenAlex) или orcid_token.txt (токен ORCID /read-public),
   они встраиваются в страницу и видны в её коде. Сами файлы в исходники и в текст проекта не входят — хранятся у Германа.

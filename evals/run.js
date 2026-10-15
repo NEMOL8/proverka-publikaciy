@@ -1,11 +1,11 @@
-// Контрольные кейсы правил. Ожидания записаны до прогона: по тексту КД и по общеизвестным сведениям об изданиях.
+// Контрольные кейсы правил. Ожидания записаны до прогона: по общеизвестным сведениям об изданиях и решениям Германа.
 // Запуск: node evals/run.js
 const fs = require('fs'), path = require('path'); const B = path.join(__dirname, '..');
 const src = fs.readFileSync(B + '/src/core.js', 'utf8').replace(/if \(typeof module[^\n]*\n?$/m, '') + fs.readFileSync(B + '/src/net.js', 'utf8').replace(/if \(typeof module[^\n]*\n?$/m, '');
-const A = new Function(src + '\nreturn {getJson,tfetch,PING_MS,corrOf,orgMatch,findDuplicates,instNames,oaShip,orcidExternalIds,KD,ST,loadRef,findJournal,splitEntries,parseEntry,titleScore,canonName,leaderVariants,sameSurname,authorPosition,journalVerdict,judgePub,judgeVariants,judgeProfileWork,detectLeader,parseAuthorInput,orcidValid,wlAt,passFilter,parseFIO,nameMatch,translitVariants,NET,crWork,findWork,enrichOA,enrichWL,authorInfo,searchAuthors,authorByOrcid,authorByScopus,orcidSearch,runSelfCheck,SELF,authorWorks,cleanOrcid,pingAll};')();
+const A = new Function(src + '\nreturn {getJson,tfetch,PING_MS,corrOf,orgMatch,findDuplicates,instNames,oaShip,orcidExternalIds,ST,matchScore,findDoi,FOUND_OK,oaWork,oaSearchWorks,instRu,loadRef,findJournal,splitEntries,parseEntry,titleScore,canonName,leaderVariants,sameSurname,authorPosition,journalVerdict,judgePub,judgeProfileWork,detectLeader,parseAuthorInput,orcidValid,wlAt,passFilter,parseFIO,nameMatch,translitVariants,NET,crWork,findWork,enrichOA,enrichWL,authorInfo,searchAuthors,authorByOrcid,authorByScopus,orcidSearch,runSelfCheck,SELF,authorWorks,cleanOrcid,pingAll};')();
 const DATA = JSON.parse(fs.readFileSync(B + '/data/ref.json', 'utf8'));
-// вымышленные издания для кейсов «квартиль по годам» (годы справочника: 2021–2025)
-const fake = (t, issn, h) => DATA.sj.push([t, issn, 0, '', 900000 + DATA.sj.length, ...h]);
+// вымышленные издания для кейсов «квартиль по годам»: история задана за 2021–2025, более ранние годы справочника — пусто
+const fake = (t, issn, h) => DATA.sj.push([t, issn, 0, '', 900000 + DATA.sj.length, ...Array(2 * (DATA.sjYears.length - 5)).fill(null), ...h]);
 fake('Test A', '99900001', [2, 5, 2, 5, 3, 5, 3, 5, 3, 5]);            // Q2 → Q3
 fake('Test B', '99900002', [3, 5, 3, 5, 2, 5, 1, 5, 1, 5]);            // Q3 → Q1
 fake('Test C', '99900003', [1, 5, 1, 5, null, null, null, null, null, null]); // есть только в 2021–2022
@@ -16,18 +16,17 @@ const { ST } = A; let pass = 0, fail = 0; const fails = [];
 const eq = (name, got, want) => { const ok = JSON.stringify(got) === JSON.stringify(want); ok ? pass++ : (fail++, fails.push(`${name}: получено ${JSON.stringify(got)}, ожидалось ${JSON.stringify(want)}`)); };
 const jv = (issn, title) => A.journalVerdict(A.findJournal(issn ? [issn] : [], title));
 
-// --- издания: [название кейса, ISSN, название, ожидаемый Q1–Q2/БС1, ожидаемый показатель ≥10]
-[['Nature', '0028-0836', 'Nature', 'ok', 'ok'],
- ['Physical Review B: Q1, показатель низкий', '2469-9950', 'Physical Review B', 'ok', 'no'],
- ['Advanced Materials', '0935-9648', 'Advanced Materials', 'ok', 'ok'],
- ['Nano Letters: показатель около порога', '1530-6984', 'Nano Letters', 'ok', 'check'],
- ['Журнал Q4', '0033-2836', 'Psychoanalytic Review', 'no', 'no'],
- ['ЖТФ: уровень Белого списка менялся 2→1', '0044-4642', 'Журнал технической физики', 'check', 'unk'],
- ['Исключён из Белого списка, но Q1 SCImago', '2211-3835', 'Acta Pharmaceutica Sinica B', 'ok', 'ok'],
- ['Издания нет в справочниках', '9999-9999', 'Вестник вымышленного университета', 'unk', 'unk'],
- ['Поиск по названию без ISSN', '', 'Physical Review Letters', 'ok', 'check'],
- ['ISSN без дефиса и в нижнем регистре', '0028083x'.replace('x', '6'), '', 'ok', 'ok'],
-].forEach(([n, i, t, q, f]) => { const v = jv(i, t); eq('издание / ' + n + ' / Q1–Q2', v.qual, q); eq('издание / ' + n + ' / показатель', v.ifSt, f); });
+// --- издания (0.7.9: только факты, без выводов «да/нет»): [кейс, ISSN, название, квартиль за последний год, найдено в SCImago, найдено в Белом списке]
+const fj = (issn, title) => A.findJournal(issn ? [issn] : [], title);
+[['Nature', '0028-0836', 'Nature', 1, true, true],
+ ['Physical Review B', '2469-9950', 'Physical Review B', 1, true, true],
+ ['ЖТФ: в SCImago нет, в Белом списке есть', '0044-4642', 'Журнал технической физики', undefined, false, true],
+ ['Издания нет в справочниках', '9999-9999', 'Вестник вымышленного университета', undefined, false, false],
+ ['ISSN без дефиса', '00280836', '', 1, true, true],
+].forEach(([n, i, t, q, inSj, inWl]) => { const v = jv(i, t), j = fj(i, t); eq('издание / ' + n, [v.qL, !!j.sj, !!j.wl], [q, inSj, inWl]); });
+eq('издание / поиск по названию без ISSN — с пометкой', [!!fj('', 'Physical Review Letters').sj, jv('', 'Physical Review Letters').notes.some(x => /по названию/.test(x))], [true, true]);
+eq('издание / Nature: импакт-фактор SCImago больше 10', jv('0028-0836', 'Nature').cpd > 10, true);
+eq('издание / нет выводов «подходит / не подходит»', ['qual', 'ifSt', 'qualWhy', 'ifWhy'].filter(k => k in jv('0028-0836', 'Nature')), []);
 eq('издание / примечание об исключении', jv('2211-3835', '').notes.some(x => /исключено из Белого списка/.test(x)), true);
 
 // --- уровень Белого списка на год публикации (ожидания по решению Германа 12.10.2026)
@@ -54,31 +53,24 @@ eq('издание / примечание об исключении', jv('2211-3
   eq('фильтр / исключён', f(rows, { q: [], wl: ['excl'] }), 1);
   eq('фильтр / статья без найденных данных не проходит выбранный фильтр', A.passFilter(R(undefined, undefined, undefined), { q: ['1'], wl: [] }), false); }
 
-// --- квартиль по годам (ожидания: совпадает за год публикации и последний год — берём; расходится — «проверьте»)
+// --- квартиль по годам (0.7.9: справочник SCImago 2006–2025; на год публикации и сейчас — факты)
 const jy = (issn, y, live, oa) => A.journalVerdict(A.findJournal([issn], ''), y, live || null, oa == null ? null : oa);
-eq('годы / Q2→Q3, статья 2021: проверьте', jy('9990-0001', 2021).qual, 'check');
-eq('годы / Q2→Q3, статья 2025: нет', jy('9990-0001', 2025).qual, 'no');
-eq('годы / Q3→Q1, статья 2021: проверьте', jy('9990-0002', 2021).qual, 'check');
-eq('годы / Q3→Q1, статья 2024: да', jy('9990-0002', 2024).qual, 'ok');
-eq('годы / издание только до 2022, статья 2024: да с пометкой', [jy('9990-0003', 2024).qual, jy('9990-0003', 2024).notes.some(x => /только до 2022/.test(x))], ['ok', true]);
-eq('годы / статья 2026, данных за год ещё нет: взят 2025 с пометкой', [jy('0028-0836', 2026).qual, jy('0028-0836', 2026).sjYear, jy('0028-0836', 2026).sjExact], ['ok', 2025, false]);
-eq('годы / статья 2019, выгрузки нет: взят 2021 с пометкой', [jy('0028-0836', 2019).sjYear, jy('0028-0836', 2019).notes.some(x => /2019/.test(x))], [2021, true]);
-eq('годы / показатель 14 в год публикации и 6 сейчас: проверьте', jy('9990-0004', 2021).ifSt, 'check');
-eq('годы / показатель 6 в год публикации и сейчас: нет', jy('9990-0004', 2025).ifSt, 'no');
-eq('годы / Nano Letters 2021 (11,5) и 2025 (8,7): проверьте', jy('1530-6984', 2021).ifSt, 'check');
-eq('годы / Technical Physics 2021: Q3, нет', jy('1063-7842', 2021).qual, 'no');
-// --- сайт Белого списка против справочника
+eq('годы / Q2→Q3: на 2021 — Q2, сейчас Q3', [jy('9990-0001', 2021).qY, jy('9990-0001', 2021).qL], [2, 3]);
+eq('годы / Q3→Q1: на 2024 — Q1', jy('9990-0002', 2024).qY, 1);
+eq('годы / издание только до 2022, статья 2024: взят 2022 с пометкой', [jy('9990-0003', 2024).sjYear, jy('9990-0003', 2024).notes.some(x => /только до 2022/.test(x))], [2022, true]);
+eq('годы / статья 2026, данных за год ещё нет: взят 2025 с пометкой', [jy('0028-0836', 2026).sjYear, jy('0028-0836', 2026).sjExact], [2025, false]);
+eq('годы / статья 2019: год теперь есть в справочнике', [jy('0028-0836', 2019).sjYear, jy('0028-0836', 2019).sjExact, jy('0028-0836', 2019).qY], [2019, true, 1]);
+eq('годы / статья 2004: выгрузки нет — взят 2006 с пометкой', [jy('0028-0836', 2004).sjYear, jy('0028-0836', 2004).sjExact, jy('0028-0836', 2004).notes.some(x => /2004/.test(x))], [2006, false, true]);
+eq('годы / справочник SCImago начинается с 2006', DATA.sjYears[0], 2006);
+eq('годы / показатель на год публикации 14, сейчас 6', [jy('9990-0004', 2021).cpd, jy('9990-0004', 2021).cpdLast], [14, 6]);
+eq('годы / Technical Physics 2021: Q3', jy('1063-7842', 2021).qY, 3);
+// --- сайт Белого списка против справочника: расхождение показывается, а не решается
 const LV = (a, b, c, st) => ({ found: true, levels: { 2023: a, 2025: b, 2026: c }, state: st || 0, disc: '' });
-eq('сайт БС / совпадает со справочником', [jy('0028-0836', 2023, LV(1, 0, 0)).wlDiff, jy('0028-0836', 2023, LV(1, 0, 0)).qual], [undefined, 'ok']);
-eq('сайт БС / издания на сайте нет, но Q1 SCImago: да, расхождение показано', [jy('0028-0836', 2023, { found: false }).qual, jy('0028-0836', 2023, { found: false }).wlDiff], ['ok', true]);
-eq('сайт БС / Q4, в справочнике нет, на сайте уровень 1: проверьте, а не «нет»', jy('9990-0005', 2023, LV(1, 1, 0)).qual, 'check');
-eq('сайт БС / Q4, в справочнике нет, на сайте уровень 3: нет', jy('9990-0005', 2023, LV(3, 3, 0)).qual, 'no');
-eq('сайт БС / ЖТФ: на сайте теперь исключён: проверьте', jy('0044-4642', 2024, LV(2, 1, 0, 2)).qual, 'check');
-// --- второй показатель (OpenAlex)
-eq('OpenAlex / PRB: SCImago 3,6, OpenAlex 15 — проверьте', jy('2469-9950', 2023, null, 15).ifSt, 'check');
-eq('OpenAlex / Nature: оба выше порога — да', jy('0028-0836', 2023, null, 20).ifSt, 'ok');
-eq('OpenAlex / издания нет в SCImago, OpenAlex 3 — нет', jy('0044-4642', 2023, null, 3).ifSt, 'no');
-eq('OpenAlex / издания нет в SCImago, OpenAlex 15 — проверьте (один источник)', jy('0044-4642', 2023, null, 15).ifSt, 'check');
+eq('сайт БС / совпадает со справочником', jy('0028-0836', 2023, LV(1, 0, 0)).wlDiff, undefined);
+eq('сайт БС / издания на сайте нет — расхождение показано', [jy('0028-0836', 2023, { found: false }).wlDiff, jy('0028-0836', 2023, { found: false }).notes.some(x => /издания нет; проверьте/.test(x))], [true, true]);
+eq('сайт БС / в справочнике нет, на сайте уровень 1 — расхождение', jy('9990-0005', 2023, LV(1, 1, 0)).wlDiff, true);
+eq('сайт БС / ЖТФ: на сайте исключён — расхождение', jy('0044-4642', 2024, LV(2, 1, 0, 2)).wlDiff, true);
+eq('OpenAlex / показатель OpenAlex передаётся рядом с SCImago', jy('2469-9950', 2023, null, 15).oaCpd, 15);
 
 // --- разбор списка
 const L1 = `1. Ivanov I.I., Petrov P.P. Thermal conductivity of layered
@@ -135,42 +127,36 @@ eq('название / точное', A.titleScore('Thermal conductivity of laye
 eq('название / с ошибками распознавания', A.titleScore('Thermal conductivity of layered oxide ceramics', 'Ivanov Therma1 conductivity of 1ayered oxide ceramics 2023') >= 0.6, true);
 eq('название / другая статья', A.titleScore('Magnetic ordering in frustrated spin chains', e1[0].query) < 0.6, true);
 
-// --- оценка публикации
-const opt = { leader: A.leaderVariants('Петров'), yearFrom: 2021, yearTo: 2026 };
+// --- одна публикация (0.7.9: факты и пометки, без «в счёт» и вариантов)
+const opt = { leaderIds: [] };
 const W = o => Object.assign({ via: 'search', score: 1, doi: '10.1/x', title: 'T', journal: 'Nature', issns: ['0028-0836'], year: 2023, type: 'journal-article', authors: AU }, o);
 const E = o => Object.assign({ raw: '', num: 1, doi: null, years: [2023], declIF: null, query: 'q' }, o);
 let p = A.judgePub(E(), W(), opt);
-eq('публикация / Nature, первый автор: идёт в счёт', p.counts, 'ok'); eq('публикация / Nature, первый автор: Вариант 2', p.v2, 'ok');
-p = A.judgePub(E(), W({ year: 2019 }), opt); eq('публикация / старше 5 лет: не в счёт', p.counts, 'no'); eq('публикация / старше 5 лет: не Вариант 2', p.v2, 'no');
-p = A.judgePub(E(), W({ type: 'proceedings-article' }), opt); eq('публикация / доклад конференции: не в счёт', p.counts, 'no');
-p = A.judgePub(E(), W({ type: 'review' }), opt); eq('публикация / обзор: в счёт', p.counts, 'ok');
-p = A.judgePub(E(), W({ issns: ['2469-9950'], journal: 'Physical Review B' }), opt); eq('публикация / PRB: в счёт', p.counts, 'ok'); eq('публикация / PRB: не Вариант 2', p.v2, 'no');
-p = A.judgePub(E(), W({ authors: [AU[1], AU[0], AU[2]] }), opt); eq('публикация / руководитель не первый, данных о corresponding нет: проверьте', p.v2, 'check'); eq('публикация / не первый автор: в счёт всё равно', p.counts, 'ok');
-p = A.judgePub(E(), W({ authors: [AU[1], AU[0], AU[2]], corr: { known: true, leader: true } }), opt); eq('публикация / не первый, но corresponding: Вариант 2', p.v2, 'ok');
-p = A.judgePub(E(), W({ authors: [AU[1], AU[0], AU[2]], corr: { known: true, leader: false } }), opt); eq('публикация / не первый и corresponding другой: нет', p.v2, 'no');
-p = A.judgePub(E(), W({ score: 0.7 }), opt); eq('публикация / неполное совпадение названия: проверьте', p.counts, 'check');
-p = A.judgePub(E(), W({ score: 0.3 }), opt); eq('публикация / чужая статья: не найдено', p.found, 'no'); eq('публикация / чужая статья не оценивается', p.work, null);
-p = A.judgePub(E(), null, opt); eq('публикация / не найдено в базе: не «не соответствует», а «не найдено»', [p.found, p.counts], ['no', 'unk']);
+eq('публикация / найдена, издание и квартиль', [p.found, p.jv.qY, p.typeName], ['ok', 1, 'статья']);
+p = A.judgePub(E(), W({ type: 'proceedings-article' }), opt); eq('публикация / доклад: тип назван, без вывода', [p.found, p.typeName], ['ok', 'доклад в трудах конференции']);
+p = A.judgePub(E(), W({ score: 0.7 }), opt); eq('публикация / неполное совпадение: проверьте', p.found, 'check');
+p = A.judgePub(E(), W({ score: 0.3 }), opt); eq('публикация / чужая статья: не найдено, ближайшая сохранена', [p.found, p.work, !!p.near], ['no', null, true]);
+p = A.judgePub(E(), null, opt); eq('публикация / не найдено в базе: «не найдено»', p.found, 'no');
 p = A.judgePub(E(), W({ score: 0.3, via: 'doi' }), opt); eq('публикация / найдено по DOI: название не сверяется', p.found, 'ok');
-p = A.judgePub(E({ years: [2021] }), W({ year: 2020 }), opt); eq('публикация / год на границе, в заявке 2021, в базе 2020: проверьте', p.year, 'check');
-p = A.judgePub(E({ years: [2018] }), W({ year: 2023 }), opt); eq('публикация / год в заявке не совпадает: отмечено', p.yearDiff, true);
-p = A.judgePub(E({ declIF: 64.8 }), W(), opt); eq('публикация / заявленный ИФ рядом с показателем или отмечен', typeof p.ifDiff, 'boolean');
-p = A.judgePub(E({ declIF: 12.5 }), W({ issns: ['2469-9950'], journal: 'Physical Review B' }), opt); eq('публикация / завышенный ИФ для PRB отмечен', p.ifDiff, true);
-p = A.judgePub(E(), W({ issns: ['9999-9999'], journal: 'Вестник вымышленного университета' }), opt); eq('публикация / издания нет в справочниках: проверьте, а не «нет»', p.counts, 'check');
-p = A.judgePub(E(), W({ authors: [{ family: 'Smith' }] }), opt); eq('публикация / руководителя нет среди авторов: проверьте', p.counts, 'check');
-p = A.judgePub(E(), W(), { leader: [], yearFrom: 2021, yearTo: 2026 }); eq('публикация / фамилия не указана: издание считается, Вариант 2 под вопросом', [p.counts, p.v2], ['ok', 'check']);
+p = A.judgePub(E(), W({ score: 0.3, via: 'manual' }), opt); eq('публикация / выбрана вручную из вариантов: найдено, с пометкой', [p.found, p.notes.some(x => /вручную/.test(x))], ['ok', true]);
+p = A.judgePub(E(), W({ doiMiss: '10.9/broken' }), opt); eq('публикация / DOI из списка не найден — пометка', p.notes.some(x => /10\.9\/broken/.test(x)), true);
+p = A.judgePub(E({ years: [2018] }), W({ year: 2023 }), opt); eq('публикация / год в списке не совпадает: отмечено', p.yearDiff, true);
+p = A.judgePub(E({ declIF: 12.5 }), W({ issns: ['2469-9950'], journal: 'Physical Review B' }), opt); eq('публикация / ИФ из списка заметно больше показателя SCImago — отмечено', p.ifDiff, true);
+p = A.judgePub(E(), W({ issns: ['9999-9999'], journal: 'Вестник вымышленного университета' }), opt); eq('публикация / издания нет в справочниках: найдена, без квартиля', [p.found, !!p.j.sj, !!p.j.wl], ['ok', false, false]);
+eq('публикация / нет полей старой проверки по КД', ['counts', 'v2', 'author', 'notesKD', 'qual', 'ifSt'].filter(k => k in A.judgePub(E(), W(), opt)), []);
+eq('профиль / статья в Q4: квартиль показан, вывода нет', [A.judgeProfileWork({ issns: ['0033-2836'], journal: '' }).jv.qL, 'st' in A.judgeProfileWork({ issns: ['0033-2836'], journal: '' })], [4, false]);
 
-// --- варианты
-const mk = (n, o) => Array.from({ length: n }, (_, i) => A.judgePub(E({ num: i + 1 }), W(o), opt));
-let v = A.judgeVariants(mk(10), null, 12); eq('варианты / 10 подтверждённых в списке', [v.v[1].st, v.v[3].st, v.v[4].st, v.v[2].st], ['ok', 'ok', 'ok', 'ok']);
-v = A.judgeVariants(mk(6, { issns: ['2469-9950'], journal: 'Physical Review B' }), null, 12); eq('варианты / 6 в списке, профиля нет', [v.v[1].st, v.v[3].st, v.v[4].st, v.v[2].st], ['check', 'ok', 'check', 'no']);
-v = A.judgeVariants(mk(6, { issns: ['2469-9950'] }), { ok: 11, check: 0, total: 14, source: 'OpenAlex' }, 12); eq('варианты / 6 в списке, 11 в профиле', [v.v[1].st, v.v[4].st], ['ok', 'ok']);
-v = A.judgeVariants(mk(3, { issns: ['2469-9950'] }), { ok: 4, check: 1, total: 9, source: 'OpenAlex' }, 12); eq('варианты / профиль меньше заявленного: проверьте, а не «нет»', [v.v[1].st, v.v[3].st, v.v[4].st], ['check', 'check', 'check']);
-eq('варианты / расхождение с п. 1.6 названо', /заявлено 12/.test(v.declNote), true);
-v = A.judgeVariants(mk(4), null, 4); eq('варианты / в п. 1.6 заявлено меньше порога — названо', /меньше требуемых 5/.test(v.v[3].why), true);
-v = A.judgeVariants([], null, null); eq('варианты / пустой список', v.v[2].st, 'unk');
-eq('профиль / статья в Q4', A.judgeProfileWork({ issns: ['0033-2836'], journal: '' }).st, 'no');
-eq('профиль / статья без издания', A.judgeProfileWork({ issns: [], journal: '' }).st, 'check');
+// --- 0.7.9: DOI с ошибками распознавания и выбор лучшего варианта (ожидания записаны до прогона)
+eq('DOI / буква O вместо нуля и пробел после «/»', A.findDoi('Title. 2023. doi: 1O.1016/ j.cej.2023.01.005.').doi, '10.1016/j.cej.2023.01.005');
+eq('DOI / пробелы вокруг точки', A.findDoi('DOI 10. 1038/s41586-021-03819-2').doi, '10.1038/s41586-021-03819-2');
+eq('DOI / ссылкой, скобка в конце отрезана', A.findDoi('(https://doi.org/10.1103/PhysRevB.54.11169)').doi, '10.1103/physrevb.54.11169');
+eq('DOI / нет DOI — null', A.findDoi('Ivanov I. Title. 2023. Vol. 10, pp. 1016-1020'), null);
+eq('DOI / запись со сломанным DOI разобрана, DOI не попал в текст запроса', [A.parseEntry('1. Ivanov I. Long enough title here. 2023. doi: 1O.1016/ j.cej.2023.01.005').doi, /1016/.test(A.parseEntry('1. Ivanov I. Long enough title here. 2023. doi: 1O.1016/ j.cej.2023.01.005').query)], ['10.1016/j.cej.2023.01.005', false]);
+{ const en = A.parseEntry('Petrov P. Thermal conductivity of layered oxide ceramics. 2023. Journal of Applied Ceramics');
+  const w1 = { title: 'Thermal conductivity of layered oxide ceramics', year: 2015, journal: 'Other Journal', authors: [{ family: 'Smith' }] }, w2 = { title: 'Thermal conductivity of layered oxide ceramics', year: 2023, journal: 'Journal of Applied Ceramics', authors: [{ family: 'Petrov' }] };
+  eq('выбор варианта / одинаковые названия: выше тот, где совпали год, первый автор и издание', A.matchScore(w2, en).score > A.matchScore(w1, en).score, true);
+  eq('выбор варианта / год далеко — ниже порога «найдена»', A.matchScore(w1, en).score < A.FOUND_OK, true);
+  eq('выбор варианта / всё совпало — «найдена»', A.matchScore(w2, en).score >= A.FOUND_OK, true); }
 
 // --- поиск автора по статьям из списка (ожидания записаны до прогона)
 const OA = (...au) => ({ oaAuthors: au.map(x => ({ id: x[0], name: x[1], orcid: x[2] || '', corr: !!x[3] })) });
@@ -184,18 +170,14 @@ dl = A.detectLeader([OA(['A1', 'Petr Petrov'])], []); eq('автор / одна 
 dl = A.detectLeader([null, {}], A.leaderVariants('Петров')); eq('автор / нет данных OpenAlex: пусто', [dl.works, dl.chosen.length], [0, 0]);
 dl = A.detectLeader([OA(['A1', 'Petr Petrov']), OA(['A1', 'Petr Petrov']), OA(['A1', 'Petr Petrov']), OA(['A7', 'J. Smith']), OA(['A8', 'J. Doe'])], []);
 eq('автор / общий автор в 3 из 5 статей: выбран', [dl.how, dl.chosen.map(x => x.id)], ['auto', ['A1']]);
-{ const o2 = { leader: A.leaderVariants('Петров'), leaderIds: ['A5'], yearFrom: 2021, yearTo: 2025 };
-  const mkW = au => ({ via: 'doi', doi: '10.1/x', title: 'T', journal: 'Nature', issns: ['0028-0836'], year: 2023, type: 'journal-article', authors: [{ family: 'Ivanov' }, { family: 'Petrov' }], oaAuthors: au });
+{ const mkW = au => ({ via: 'doi', doi: '10.1/x', title: 'T', journal: 'Nature', issns: ['0028-0836'], year: 2023, type: 'journal-article', authors: [{ family: 'Ivanov' }, { family: 'Petrov' }], oaAuthors: au });
   const e0 = { raw: '', num: 1, doi: null, years: [2023], declIF: null, query: 'q' };
-  eq('автор / corresponding по профилю, хотя имя в базе записано иначе', A.judgePub(e0, mkW([{ id: 'A2', name: 'I. Ivanov', corr: false }, { id: 'A5', name: 'Pyotr Petroff-Vodkin', corr: true }]), o2).v2, 'ok');
-  eq('автор / corresponding — другой человек', A.judgePub(e0, mkW([{ id: 'A2', name: 'I. Ivanov', corr: true }, { id: 'A5', name: 'P. Petrov', corr: false }]), o2).v2, 'no');
-  eq('автор / corresponding не размечен: проверьте', A.judgePub(e0, mkW([{ id: 'A2', name: 'I. Ivanov', corr: false }, { id: 'A5', name: 'P. Petrov', corr: false }]), o2).v2, 'check'); }
+  const pc = A.judgePub(e0, mkW([{ id: 'A2', name: 'I. Ivanov', corr: false }, { id: 'A5', name: 'Pyotr Petroff-Vodkin', corr: true }]), { leaderIds: ['A5'] });
+  eq('автор / corresponding из OpenAlex: кто отмечен', [pc.work.corr.known, pc.work.corr.names], [true, ['Pyotr Petroff-Vodkin']]);
+  eq('автор / corresponding не размечен: «не указан», никто не подставлен', A.judgePub(e0, mkW([{ id: 'A2', name: 'I. Ivanov', corr: false }, { id: 'A5', name: 'P. Petrov', corr: false }]), {}).work.corr.known, false); }
 { const pw = A.judgeProfileWork({ issns: ['0028-0836'], journal: '', year: 2023, authors: [{ id: 'A1', corr: false }, { id: 'A5', corr: true }] }, ['A5']);
-  eq('профиль / место автора и corresponding', [pw.st, pw.first, pw.corr, pw.ifSt], ['ok', false, true, 'ok']);
-  const pw2 = A.judgeProfileWork({ issns: ['2469-9950'], journal: '', year: 2023, authors: [{ id: 'A5', corr: false }] }, ['A5']); eq('профиль / первый автор, показатель низкий', [pw2.first, pw2.ifSt], [true, 'no']); }
-{ const pubs0 = Array.from({ length: 3 }, (_, i) => A.judgePub({ raw: '', num: i + 1, doi: null, years: [2023], declIF: null, query: 'q' }, { via: 'doi', doi: '10.1/x', title: 'T', journal: 'Physical Review B', issns: ['2469-9950'], year: 2023, type: 'journal-article', authors: [{ family: 'Petrov' }] }, { leader: A.leaderVariants('Петров'), yearFrom: 2021, yearTo: 2025 }));
-  eq('варианты / Вариант 2: в списке нет, в профиле есть кандидат — проверьте', A.judgeVariants(pubs0, { ok: 3, check: 0, total: 3, source: 'OpenAlex', v2: [{}] }, null).v[2].st, 'check');
-  eq('варианты / Вариант 2: нет ни в списке, ни в профиле — не подтверждено', A.judgeVariants(pubs0, { ok: 3, check: 0, total: 3, source: 'OpenAlex', v2: [] }, null).v[2].st, 'no'); }
+  eq('профиль / место автора и corresponding', [pw.first, pw.corr, pw.corrSt], [false, true, 'yes']);
+  const pw2 = A.judgeProfileWork({ issns: ['2469-9950'], journal: '', year: 2023, authors: [{ id: 'A5', corr: false }] }, ['A5']); eq('профиль / первый автор', pw2.first, true); }
 
 // --- сведения об авторе, введённые человеком (все значения вымышлены; 0000-0002-1825-0097 — учебный ORCID из документации)
 const PA = A.parseAuthorInput;
@@ -209,8 +191,8 @@ eq('ввод автора / длинное тире из Word', PA('0000–0002�
 eq('ввод автора / пусто', PA('  '), { orcid: '', orcidBad: '', scopus: '', rid: '', spin: '', rinc: '', name: '' });
 eq('ввод автора / подписи граф не становятся именем', PA('WoS ResearcherID/Scopus ID/РИНЦ AuthorID: AAA-1234-2020/57000000000').name, '');
 eq('ORCID / контрольная цифра X', A.orcidValid('0000-0002-1694-233X'), true);
-{ const pk = A.judgePub({ raw: '', num: 1, doi: null, years: [2023], declIF: null, query: 'q' }, { via: 'doi', doi: '10.1/x', title: 'T', journal: 'Nature', issns: ['0028-0836'], year: 2023, type: 'proceedings-article', authors: [{ family: 'Smith' }] }, { leader: A.leaderVariants('Петров'), yearFrom: 2021, yearTo: 2025 });
-  eq('без КД / замечания о требованиях КД лежат отдельно от фактов', [pk.notes.some(x => /КД|руководител/.test(x)), pk.notesKD.length], [false, 2]); }
+{ const pk = A.judgePub({ raw: '', num: 1, doi: null, years: [2023], declIF: null, query: 'q' }, { via: 'doi', doi: '10.1/x', title: 'T', journal: 'Nature', issns: ['0028-0836'], year: 2023, type: 'proceedings-article', authors: [{ family: 'Smith' }] }, {});
+  eq('без КД / в пометках нет требований КД и «руководителя»', pk.notes.some(x => /КД|руководител|заявк/.test(x)), false); }
 
 // --- строки идентификаторов из настоящих заявок 12.10.2026 (значения вымышлены, вид сохранён)
 eq('ввод автора / «ResearcherID/Scopus ID/SPIN» без подписей', PA('C-1234-2014/6700000001/1234-5678'), { orcid: '', orcidBad: '', scopus: '6700000001', rid: 'C-1234-2014', spin: '1234-5678', rinc: '', name: '' });
@@ -246,13 +228,27 @@ eq('транслит / несколько написаний фамилии', A.
   w = await A.findWork(e1[0]); eq('сеть / поиск выбирает похожую статью, а не первую', [w.doi, w.score >= 0.85], ['10.1/b', true]);
   eq('сеть / в запрос уходит только текст записи', /query\.bibliographic=/.test(calls[1]) && !/mailto|orcid/.test(calls[1]), true);
   N.fetch = async () => res(200, { message: { items: [] } }); eq('сеть / пустой ответ — не найдено', await A.findWork(e1[0]), null);
+  // 0.7.9: DOI из списка не найден — поиск по тексту; Crossref пуст — запасной поиск в OpenAlex; варианты (ожидания записаны до прогона)
+  calls = []; N.fetch = async u => { calls.push(decodeURIComponent(u)); if (/works\/10/.test(u)) return res(404, {}); return res(200, { message: { items: [crItem('10.1234/mc.2022.0155', 'Sorption of oil products by alginate gels', { issued: { 'date-parts': [[2022]] } })] } }); };
+  w = await A.findWork(e1[1]); eq('сеть / DOI из списка не найден (404) — найдено по тексту, DOI отмечен', [w.via, w.doi, w.doiMiss], ['search', '10.1234/mc.2022.0155', '10.1234/mc.2022.0155']);
+  const oaHit = { id: 'https://openalex.org/W9', doi: 'https://doi.org/10.7/oa', title: 'Thermal conductivity of layered oxide ceramics under cyclic load', publication_year: 2023, type: 'article', primary_location: { source: { display_name: 'Journal of Applied Ceramics', issn: ['1234-5679'], type: 'journal' } }, authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Ivan Ivanov' }, is_corresponding: true, institutions: [] }] };
+  calls = []; N.useOA = true; N.fetch = async u => { calls.push(decodeURIComponent(u)); return /openalex/.test(u) ? res(200, { results: [oaHit] }) : res(200, { message: { items: [] } }); };
+  w = await A.findWork(e1[0]); eq('сеть / Crossref не нашёл — запасной поиск в OpenAlex', [w && w.source, w && w.doi, w && w.corr.known, w && w.score >= A.FOUND_OK, calls.some(u => /api\.openalex\.org\/works\?search=/.test(u))], ['OpenAlex', '10.7/oa', true, true, true]);
+  N.fetch = async u => /openalex/.test(u) ? res(200, { results: [] }) : res(200, { message: { items: [crItem('10.1/old', 'Thermal conductivity of layered oxide ceramics under cyclic load', { issued: { 'date-parts': [[2012]] }, author: [{ family: 'Smith' }] }), crItem('10.1/new', 'Thermal conductivity of layered oxide ceramics under cyclic load', { issued: { 'date-parts': [[2023]] }, author: [{ family: 'Ivanov' }] })] } });
+  w = await A.findWork(e1[0]); eq('сеть / одинаковые названия: выбран вариант с годом и автором из записи, другой — в вариантах', [w.doi, w.alts.map(x => x.doi)], ['10.1/new', ['10.1/old']]);
+  calls = []; N.fetch = async u => { calls.push(decodeURIComponent(u)); return /,topics/.test(u) ? res(400, {}) : res(200, { results: [{ id: 'https://openalex.org/A5', display_name: 'Anna Sokolova', works_count: 3 }] }); };
+  let sa0 = await A.searchAuthors('Anna Sokolova'); eq('сеть / OpenAlex не принял поле topics — поиск автора без него', [sa0.length, calls.length], [1, 2]);
+  N.fetch = async () => res(200, { results: [{ id: 'https://openalex.org/I77', display_name: 'Test University', international: { display_name: { ru: 'Тестовый университет', en: 'Test University' } } }] });
+  eq('сеть / русские названия организаций одним запросом', await A.instRu(['I77', 'I77']), { I77: 'Тестовый университет' });
+  N.fetch = async () => res(200, { results: [{ id: 'https://openalex.org/A5', display_name: 'Anna Sokolova', display_name_alternatives: ['Соколова Анна Викторовна'], topics: [{ display_name: 'Seaweed Polymers' }, { display_name: 'Oil Spill Response' }], last_known_institutions: [{ id: 'https://openalex.org/I77', display_name: 'Test University' }] }] });
+  sa0 = await A.searchAuthors('Anna Sokolova'); eq('сеть / у кандидата темы и организация с идентификатором', [sa0[0].topics, sa0[0].instIds, sa0[0].alt], [['Seaweed Polymers', 'Oil Spill Response'], ['I77'], ['Соколова Анна Викторовна']]);
   let n = 0; N.fetch = async () => (++n === 1 ? res(429, {}) : res(200, { message: { items: [crItem('10.1/b', 'Thermal conductivity of layered oxide ceramics under cyclic load')] } }));
   const t0 = Date.now(); w = await A.findWork(e1[0]); eq('сеть / после отказа 429 повтор', [w && w.doi, n, Date.now() - t0 >= 2000], ['10.1/b', 2, true]);
   N.fetch = async () => { throw new Error('Failed to fetch'); }; let er = null; try { await A.findWork(e1[0]); } catch (e) { er = e.kind; } eq('сеть / нет связи — ошибка, а не «не найдено»', er, 'net');
   // OpenAlex
   const oaW = { id: 'W1', type: 'review', authorships: [{ author_position: 'first', is_corresponding: false, author: { display_name: 'Ivan Ivanov' } }, { author_position: 'last', is_corresponding: true, author: { display_name: 'Petr P. Petrov' } }], primary_location: { source: { issn: ['0028-0836'] } } };
-  N.useOA = true; N.fetch = async () => res(200, oaW); w = A.crWork(crItem('10.1/c', 'X'), 'doi'); await A.enrichOA(w, A.leaderVariants('Петров'));
-  eq('сеть / OpenAlex: обзор и corresponding', [w.type, w.corr.known, w.corr.leader], ['review', true, true]);
+  N.useOA = true; N.fetch = async () => res(200, oaW); w = A.crWork(crItem('10.1/c', 'X'), 'doi'); await A.enrichOA(w, []);
+  eq('сеть / OpenAlex: обзор и corresponding', [w.type, w.corr.known, w.corr.names], ['review', true, ['Petr P. Petrov']]);
   N.fetch = async () => res(200, Object.assign({}, oaW, { authorships: oaW.authorships.map(a => Object.assign({}, a, { is_corresponding: false })) })); w = A.crWork(crItem('10.1/c', 'X'), 'doi'); await A.enrichOA(w, A.leaderVariants('Петров'));
   eq('сеть / OpenAlex: corresponding не размечен — «нет данных», а не «не он»', w.corr.known, false);
   N.fetch = async () => res(401, {}); w = A.crWork(crItem('10.1/c', 'X'), 'doi'); await A.enrichOA(w, []); eq('сеть / OpenAlex требует ключ: отключается, проверка идёт дальше', [N.useOA, !!N.oaOff], [false, true]);

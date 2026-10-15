@@ -1,7 +1,16 @@
 /* ===== Проверка публикаций: правила (без сети, без ИИ) ===== */
-const VERSION = '0.7.8', VERSION_DATE = '14.10.2026';
+const VERSION = '0.7.9', VERSION_DATE = '15.10.2026';
 /* Что нового — показывается на странице */
 const CHANGES = [
+  ['0.7.9', '15.10.2026', ['Справочник SCImago — за 2006–2025 годы (был 2021–2025): квартиль и показатель на год публикации и для старых статей. Белого списка до 2023 года не было — у таких статей уровень 2023 года показан справочно.',
+    'Поиск статей по списку: лучший вариант выбирается по названию, году, изданию и первому автору (из 10 вариантов вместо 4); если Crossref не нашёл — запасной поиск в OpenAlex; DOI узнаётся и с ошибками распознавания («1O.1016», пробелы); если DOI из списка не найден — поиск по тексту. Для спорных и ненайденных статей — до 3 ближайших вариантов с кнопкой «Это она» и ссылки на поиск в Google Scholar и eLibrary.',
+    'Колонка «Показатель» переименована в «Импакт-фактор» (это по-прежнему «цитирований на документ за 2 года» SCImago — подпись под заголовком).',
+    'Колонка «Авторы»: сверху крупная пометка «Corresponding — да / нет / в базе не указан».',
+    'Если издания нет в SCImago — ссылки, где посмотреть квартиль самому: Scopus Sources (CiteScore), список WoS, JCR. У изданий из SCImago — ссылка на страницу издания в Scopus.',
+    'Индекс Хирша Scopus, WoS, РИНЦ и квартиль WoS больше не вписываются вручную: где значение утилита не получает — ссылка на профиль или поиск и пометка «посмотрите сами».',
+    'Выбор автора из найденных по ФИО: ФИО кириллицей (если оно есть в OpenAlex), организация на английском и русском, основные темы, ссылки ORCID · Scopus · OpenAlex.',
+    'Фильтры — кнопками в два ряда; меньше пояснений и рамок; справка, «Что нового», «Что уходит в интернет» и настройки — одной строкой сверху; ключ OpenAlex спрятан в «Дополнительно».',
+    'Сводка по нескольким авторам по умолчанию — за все годы. Из кода удалены остатки старого блока итоговых выводов.']],
   ['0.7.8', '14.10.2026', ['Убраны фирменный шрифт и логотип: страница использует системные шрифты, оформление (цвета, шапка) прежнее.']],
   ['0.7.7', '14.10.2026', ['Квартили не только SCImago: у издания показана индексация по Белому списку (WoS CC, Scopus, RSCI) — если издания нет в SCImago, сразу видно, в какой базе может быть квартиль. Для квартиля WoS (JCR) — ссылки для проверки и поле, чтобы вписать значение (открытого источника нет); вписанное попадает в «Скопировать таблицу».', 'Сайт: кнопки работают сразу, ход загрузки справочников виден в процентах, при сбое — понятное сообщение и кнопка «Повторить»; ошибки страницы показываются наверху.']],
   ['0.7.6', '14.10.2026', ['Подписи сделаны общими, без привязки к конкретным документам: у идентификаторов источник «введено», поле «Организация для сверки».']],
@@ -21,13 +30,6 @@ const CHANGES = [
   ['0.5', '12.10.2026', ['Два режима: список публикаций и автор. Фильтры по квартилю, Белому списку и годам. Квартиль и уровень — на год публикации и сейчас.']],
 ];
 
-/* Требования п. 4.4 КД (4 очередь). Меняются здесь. */
-const KD = {
-  years: 5,            // «за последние пять лет»
-  v1pubs: 10, v3pubs: 5, v4pubs: 8,
-  v2if: 10,            // импакт-фактор не ниже 10
-  ifLow: 7, ifHigh: 13 // «цитирований на документ» SCImago: ниже ifLow — нет, от ifHigh — да, между — «проверьте»
-};
 const ST = { ok: 'ok', check: 'check', no: 'no', unk: 'unk' };
 const ST_NAME = { ok: 'подтверждено', check: 'проверьте', no: 'не подтверждено', unk: 'не удалось проверить' };
 
@@ -69,7 +71,6 @@ function sjAt(sj, year) {
   const y = ys.slice().sort((a, b) => Math.abs(a - year) - Math.abs(b - year) || b - a)[0];
   return { y, exact: false, why: year > REF.sjYear ? `данных SCImago за ${year} год ещё нет` : (year < REF.sjYears[0] ? `выгрузки SCImago за ${year} год нет в справочнике` : `в SCImago за ${year} год издания нет`) };
 }
-const ifStatus = c => c == null ? ST.unk : (c >= KD.ifHigh ? ST.ok : (c >= KD.ifLow ? ST.check : ST.no));
 function wlRec(i) {
   const r = REF.wl[i]; const lv = { 2023: r[2], 2025: r[3], 2026: r[4] };
   return { title: r[0], issns: r[1].split(' ').filter(Boolean), levels: lv, state: r[5], notice: r[6] ? REF.notes[r[6] - 1] : '', disc: r[7], wos: !!(r[8] & 1), scopus: !!(r[8] & 2), rsci: !!(r[8] & 4) };
@@ -124,8 +125,8 @@ function parseEntry(raw) {
   let t = raw.replace(/([a-zа-яё])-\n(?=[a-zа-яё])/gi, '$1').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
   const e = { raw: t, num: null, doi: null, years: [], declIF: null, query: '' };
   let m = t.match(/^(\d{1,2})\s*[.)]\s*/); if (m) { e.num = +m[1]; t = t.slice(m[0].length); }
-  m = t.match(DOI_RE); if (m) e.doi = cleanDoi(m[0]);
-  let q = t.replace(/https?:\/\/\S+/g, ' ').replace(DOI_RE, ' ');
+  const dd = findDoi(t); if (dd) { e.doi = dd.doi; t = t.replace(dd.raw, ' '); }
+  let q = t.replace(/https?:\/\/\S+/g, ' ').replace(DOI_RE, ' ').replace(/\bdoi\s*:\s*/gi, ' ');
   // заявленный импакт-фактор: число с дробной частью в конце записи или после «IF / импакт-фактор»
   m = q.match(/(?:\bIF\b|импакт[\s-]*фактор)\s*[:=–—-]?\s*(\d{1,3}(?:[.,]\d{1,3})?)/i);
   if (m) { e.declIF = parseFloat(m[1].replace(',', '.')); q = q.replace(m[0], ' '); }
@@ -145,6 +146,26 @@ function titleScore(foundTitle, entryText) {
   let hit = 0;
   for (const w of ft) { if (set.has(w)) hit++; else if (w.length >= 6 && et.some(x => Math.abs(x.length - w.length) <= 1 && lev(x, w, 1) <= 1)) hit += 0.9; }
   return hit / ft.length;
+}
+
+/* DOI в тексте записи, в том числе с ошибками распознавания: «1O.1016», «10. 1016 / j.x», «doi: 10.1016/ j.x», «https://doi.org/10…».
+   Возвращает {doi, raw} — найденный DOI и кусок текста, который он занимал, или null */
+function findDoi(t) {
+  t = String(t || '');
+  const m = t.match(/(?:https?:\/\/(?:dx\.)?doi\.org\/\s*|\bdoi\s*[:.]?\s*)?\b1[0Oo]\s?\.\s?(\d[\dOoIl]{3,8})\s?\/\s?([^\s"<>]+)/i);
+  if (!m) return null;
+  const pre = m[1].replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+  return { doi: cleanDoi('10.' + pre + '/' + m[2]), raw: m[0] };
+}
+/* Насколько найденная статья подходит к записи списка: название (главное) + год, первый автор, издание.
+   Год рядом (±1) — без штрафа, другой год — штраф; совпали фамилия первого автора или издание — небольшая прибавка. От 0 до 1. */
+function matchScore(w, entry) {
+  const t = titleScore(w.title, entry.query); let s = t;
+  if (w.year && entry.years && entry.years.length) { if (entry.years.indexOf(w.year) >= 0) s += 0.06; else if (!entry.years.some(y => Math.abs(y - w.year) === 1)) s -= 0.2; }
+  const fam = w.authors && w.authors[0] ? (w.authors[0].family || String(w.authors[0].name || '').trim().split(/\s+/).pop()) : '';
+  if (fam && fam.length >= 3) { const et = norm(entry.query).split(' '); const c = canonName(fam); if (c && et.some(x => x.length >= 3 && canonName(x) === c)) s += 0.04; }
+  if (w.journal) { const jw = norm(w.journal).split(' ').filter(x => x.length >= 4); if (jw.length && jw.every(x => norm(entry.query).split(' ').indexOf(x) >= 0)) s += 0.04; }
+  return { score: Math.max(0, Math.min(1, s)), title: t };
 }
 
 /* ---------- фамилия руководителя ---------- */
@@ -271,154 +292,69 @@ function findDuplicates(pubs) {
   return out;
 }
 
-/* ---------- оценка издания ----------
+/* ---------- данные издания на год публикации ----------
+   Только факты: квартиль и показатель SCImago на год публикации и последний год, уровень Белого списка, расхождения со сайтом.
    year — год публикации; live — ответ сайта Белого списка {found, levels, state, disc} или null; oaCpd — показатель OpenAlex или null */
 function journalVerdict(j, year, live, oaCpd) {
-  const o = { qual: ST.unk, qualWhy: [], ifSt: ST.unk, ifWhy: '', notes: [] };
+  const o = { notes: [] };
   const sj = j.sj, wl = j.wl;
   if (j.sjHow === 'ambiguous') o.notes.push('в SCImago несколько изданий с таким ISSN или названием — взято первое, проверьте');
   if (j.wlHow === 'ambiguous') o.notes.push('в Белом списке несколько изданий с таким ISSN или названием — взято первое, проверьте');
   if (j.sjHow === 'title' || j.wlHow === 'title') o.notes.push('издание найдено по названию, а не по ISSN');
-  let sjOk = null, wlOk = null, at = null;
   if (sj) {
-    at = sjAt(sj, year); const hy = sj.hist[at.y], hl = sj.hist[sj.last]; o.sjYear = at.y; o.sjExact = at.exact; o.qY = hy.q; o.qL = hl.q; o.yL = sj.last;
+    const at = sjAt(sj, year), hy = sj.hist[at.y], hl = sj.hist[sj.last];
+    o.sjYear = at.y; o.sjExact = at.exact; o.qY = hy.q; o.qL = hl.q; o.yL = sj.last;
     o.hist = Object.keys(sj.hist).map(y => `${y}: ${sj.hist[y].q ? 'Q' + sj.hist[y].q : '—'}`).join(', ');
-    const okY = hy.q ? hy.q <= 2 : null, okL = hl.q ? hl.q <= 2 : null;
-    o.qualWhy.push(`SCImago ${at.y}${at.exact ? ' (год публикации)' : ''}: ${hy.q ? 'Q' + hy.q : 'квартиль не присвоен'}` + (at.y !== sj.last ? `; ${sj.last}: ${hl.q ? 'Q' + hl.q : 'квартиль не присвоен'}` : ''));
     if (!at.exact) o.notes.push(`${at.why} — взят ${at.y} год`);
     if (sj.last < REF.sjYear) o.notes.push(`в SCImago издание есть только до ${sj.last} года`);
-    // квартиль на год публикации и за последний год: совпадают — берём, расходятся — «проверьте»
-    const both = [okY, okL].filter(v => v !== null);
-    if (!both.length) sjOk = null; else if (both.every(v => v)) sjOk = true; else if (both.some(v => v)) { sjOk = 'maybe'; o.notes.push(`квартиль издания менялся (${o.hist}): на ${at.y} год — ${hy.q ? 'Q' + hy.q : 'нет'}, на ${sj.last} — ${hl.q ? 'Q' + hl.q : 'нет'}; проверьте, какой год учитывать`); } else sjOk = false;
     if (sj.type) o.notes.push(`в SCImago тип издания — ${SJ_TYPE[sj.type]}`);
-  } else o.qualWhy.push('в SCImago не найдено');
-  // Белый список: встроенный справочник и, если получен, ответ сайта
+    o.cpd = hy.cpd != null ? hy.cpd : hl.cpd; o.cpdLast = hl.cpd;
+  }
   const lvStr = lv => { const e = Object.entries(lv).filter(([, v]) => v); return e.length ? e.map(([y, v]) => `уровень ${v} (${y})`).join(', ') : 'уровень не указан'; };
-  const wlEval = (levels, state) => { const lv = Object.values(levels).filter(Boolean); const any1 = lv.some(v => v === 1), all1 = lv.length > 0 && lv.every(v => v === 1); return { ok: all1 && state !== 2 ? true : (any1 ? 'maybe' : false), any1, all1 }; };
   if (wl) {
-    const e = wlEval(wl.levels, wl.state); wlOk = e.ok;
-    o.qualWhy.push('Белый список: ' + lvStr(wl.levels) + (wl.state === 2 ? `, исключён ${wl.disc}` : ''));
     if (wl.state === 2) o.notes.push('издание исключено из Белого списка ' + wl.disc + ' — учитывается ли статья, зависит от даты публикации');
-    else if (e.any1 && !e.all1) o.notes.push('уровень издания в Белом списке менялся — проверьте уровень на год публикации');
     if (wl.state === 1 && wl.notice) o.notes.push('примечание Белого списка: ' + wl.notice);
-  } else o.qualWhy.push('в Белом списке не найдено');
+  }
   if (live) {
     o.wlLive = true;
     const a = wl ? JSON.stringify([wl.levels[2023] || 0, wl.levels[2025] || 0, wl.levels[2026] || 0, wl.state === 2]) : 'нет';
     const b = live.found ? JSON.stringify([live.levels[2023] || 0, live.levels[2025] || 0, live.levels[2026] || 0, live.state === 2]) : 'нет';
-    if (a !== b) {
-      o.wlDiff = true;
-      o.qualWhy.push('сайт Белого списка сейчас: ' + (live.found ? lvStr(live.levels) + (live.state === 2 ? `, исключён ${live.disc || ''}` : '') : 'издания нет'));
-      o.notes.push(`сайт Белого списка отвечает иначе, чем справочник от ${REF.wlDate} — показаны оба значения, проверьте`);
-      const lo = live.found ? wlEval(live.levels, live.state).ok : false; if ((lo || false) !== (wlOk || false)) wlOk = 'maybe';
-    } else o.qualWhy.push('сайт Белого списка: совпадает со справочником');
+    if (a !== b) { o.wlDiff = true; o.notes.push(`сайт Белого списка отвечает иначе, чем справочник от ${REF.wlDate}: на сайте — ` + (live.found ? lvStr(live.levels) + (live.state === 2 ? `, исключён ${live.disc || ''}` : '') : 'издания нет') + '; проверьте'); }
   }
-  if (sjOk === true || wlOk === true) o.qual = ST.ok;
-  else if (sjOk === 'maybe' || wlOk === 'maybe') o.qual = ST.check;
-  else if (!sj && !wl && !(live && live.found)) o.qual = ST.unk;
-  else if (sj && sjOk === null && !wl) o.qual = ST.check;
-  else o.qual = ST.no;
-  // показатель вместо импакт-фактора: год публикации и последний год
-  if (sj) {
-    const cy = sj.hist[at.y].cpd, cl = sj.hist[sj.last].cpd; o.cpd = cy != null ? cy : cl; o.cpdLast = cl;
-    const sy = ifStatus(cy), sl = ifStatus(cl); o.ifSt = sy === sl || sl === ST.unk ? sy : (sy === ST.unk ? sl : ST.check);
-    o.ifWhy = `«цитирований на документ за 2 года» SCImago: ${at.y} — ${cy != null ? fmtNum(cy) : 'нет'}` + (at.y !== sj.last ? `, ${sj.last} — ${cl != null ? fmtNum(cl) : 'нет'}` : '');
-    if (sy !== sl && sy !== ST.unk && sl !== ST.unk) o.notes.push(`показатель издания в ${at.y} и ${sj.last} годах по разные стороны порога — сверьте импакт-фактор на сайте журнала`);
-    else if (o.ifSt === ST.check) o.ifWhy += ` (близко к порогу ${KD.v2if}: сверьте импакт-фактор на сайте журнала)`;
-  } else o.ifWhy = 'издания нет в SCImago — показатель неизвестен';
-  if (oaCpd != null) {
-    o.oaCpd = oaCpd; o.ifWhy += `; OpenAlex (сейчас) — ${fmtNum(oaCpd)}`; const so = ifStatus(oaCpd);
-    if (o.ifSt === ST.unk) o.ifSt = so === ST.no ? ST.no : ST.check;
-    else if (so !== o.ifSt && o.ifSt !== ST.check) { o.ifSt = ST.check; o.notes.push(`показатели SCImago и OpenAlex по разные стороны порога — сверьте импакт-фактор на сайте журнала`); }
-  }
+  if (oaCpd != null) o.oaCpd = oaCpd;
   return o;
 }
 
-/* ---------- оценка одной публикации ----------
-   entry — запись из заявки; work — найденная статья {doi,title,authors[],journal,issns[],year,type,score,via,corr}
-   opt: {leader, yearFrom, yearTo} */
+/* ---------- одна публикация из списка ----------
+   entry — запись из списка; work — найденная статья {doi,title,authors[],journal,issns[],year,type,score,via,oaAuthors}
+   opt: {leaderIds — профили найденного автора в OpenAlex} */
 const TYPE_OK = { 'journal-article': 'статья', article: 'статья', review: 'обзор' };
 const TYPE_RU = { 'proceedings-article': 'доклад в трудах конференции', 'book-chapter': 'глава книги', 'posted-content': 'препринт', preprint: 'препринт', book: 'книга', dataset: 'набор данных', editorial: 'редакционная статья', letter: 'письмо', erratum: 'исправление', 'peer-review': 'рецензия', dissertation: 'диссертация', monograph: 'монография', 'report': 'отчёт', paratext: 'служебная страница журнала' };
+/* Пороги совпадения найденной статьи с записью: от FOUND_OK — найдена, от FOUND_NEAR — похожая (проверьте), ниже — не найдена */
+const FOUND_OK = 0.85, FOUND_NEAR = 0.6;
 function judgePub(entry, work, opt) {
-  const r = { entry, work, found: ST.unk, notes: entry.warn ? [entry.warn] : [], notesKD: [], year: ST.unk, type: ST.unk, qual: ST.unk, ifSt: ST.unk, author: ST.unk, j: null, jv: null, pos: null, counts: ST.unk, v2: ST.unk };
-  if (!work) { r.found = work === null ? ST.no : ST.unk; r.notes.push(work === null ? 'в открытой базе не найдено — проверьте вручную (возможно, издание не передаёт данные в Crossref или запись распознана с ошибками)' : 'запрос не выполнен'); return r; }
-  // найдено ли именно то
-  if (work.via === 'doi') r.found = ST.ok;
-  else { r.found = work.score >= 0.85 ? ST.ok : (work.score >= 0.6 ? ST.check : ST.no); if (r.found === ST.check) r.notes.push('название найденной статьи совпадает с записью не полностью — убедитесь, что это та же статья'); }
-  if (r.found === ST.no) { r.notes.push('ближайшая найденная статья не похожа на запись — проверьте вручную'); r.work = null; r.near = work; return r; }
-  // год
-  if (work.year) {
-    r.year = work.year >= opt.yearFrom && work.year <= opt.yearTo ? ST.ok : ST.no;
-    if (entry.years.length && entry.years.indexOf(work.year) < 0) {
-      const near = entry.years.some(y => Math.abs(y - work.year) === 1);
-      r.yearDiff = true; r.notes.push(`год в списке (${entry.years.join(', ')}) не совпадает с годом в базе (${work.year})` + (near ? ' — разница в один год бывает между выходом онлайн и в номере' : ''));
-      if (near && entry.years.some(y => y >= opt.yearFrom && y <= opt.yearTo) !== (r.year === ST.ok)) r.year = ST.check;
-    }
+  opt = opt || {};
+  const r = { entry, work, found: ST.unk, notes: entry.warn ? [entry.warn] : [], j: null, jv: null };
+  if (!work) { r.found = work === null ? ST.no : ST.unk; r.notes.push(work === null ? 'в открытых базах (Crossref, OpenAlex) не найдено — проверьте вручную по ссылкам поиска' : 'запрос не выполнен'); return r; }
+  if (work.via === 'doi' || work.via === 'manual') r.found = ST.ok;
+  else { r.found = work.score >= FOUND_OK ? ST.ok : (work.score >= FOUND_NEAR ? ST.check : ST.no); if (r.found === ST.check) r.notes.push('найденная статья совпадает с записью не полностью — убедитесь, что это та же статья, или выберите из вариантов'); }
+  if (work.via === 'manual') r.notes.push('статья выбрана вручную из вариантов');
+  if (work.doiMiss) r.notes.push(`DOI из списка (${work.doiMiss}) в Crossref не найден — статья найдена по тексту записи; проверьте DOI`);
+  if (r.found === ST.no) { r.notes.push('ближайшая найденная статья не похожа на запись — выберите из вариантов или проверьте вручную'); r.work = null; r.near = work; return r; }
+  if (work.year && entry.years.length && entry.years.indexOf(work.year) < 0) {
+    const near = entry.years.some(y => Math.abs(y - work.year) === 1);
+    r.yearDiff = true; r.notes.push(`год в списке (${entry.years.join(', ')}) не совпадает с годом в базе (${work.year})` + (near ? ' — разница в один год бывает между выходом онлайн и в номере' : ''));
   }
-  // тип
-  if (work.type) { if (TYPE_OK[work.type]) { r.type = ST.ok; r.typeName = TYPE_OK[work.type]; } else { r.type = ST.no; r.typeName = TYPE_RU[work.type] || work.type; r.notesKD.push(`тип публикации в базе — ${r.typeName}; КД требует article или review`); } }
-  // издание
+  if (work.type) r.typeName = TYPE_OK[work.type] || TYPE_RU[work.type] || work.type;
   r.j = findJournal(work.issns, work.journal); r.jv = journalVerdict(r.j, work.year, work.wlLive || null, work.oaCpd != null ? work.oaCpd : null);
-  r.qual = r.jv.qual; r.ifSt = r.jv.ifSt; r.notes.push(...r.jv.notes);
+  r.notes.push(...r.jv.notes);
   if (entry.declIF != null) {
     r.declIF = entry.declIF;
-    if (r.jv.cpd != null) { const d = Math.abs(entry.declIF - r.jv.cpd), big = d > Math.max(1.5, 0.35 * r.jv.cpd); r.ifDiff = big; if (big) r.notes.push(`импакт-фактор из списка ${fmtNum(entry.declIF)} заметно отличается от показателя SCImago ${fmtNum(r.jv.cpd)} — это разные показатели, сверьте на сайте журнала`);
-      if (entry.declIF >= KD.v2if && r.jv.ifSt === ST.no) r.notesKD.push(`в заявке импакт-фактор не ниже ${KD.v2if}, а по SCImago издание до порога не доходит`); }
+    if (r.jv.cpd != null) { const d = Math.abs(entry.declIF - r.jv.cpd), big = d > Math.max(1.5, 0.35 * r.jv.cpd); r.ifDiff = big; if (big) r.notes.push(`в списке ${fmtNum(entry.declIF)}, а «цитирований на документ» SCImago ${fmtNum(r.jv.cpd)} — это разные показатели (в списке обычно импакт-фактор WoS), сверьте на сайте журнала`); }
   }
-  // автор
-  r.pos = authorPosition(work.authors, opt.leader);
-  // corresponding author: по разметке OpenAlex; руководитель узнаётся по фамилии или по найденному профилю автора
-  if (work.oaAuthors) { const ca = work.oaAuthors.filter(a => a.corr); work.corr = ca.length ? { known: true, leader: ca.some(a => (opt.leaderIds && opt.leaderIds.indexOf(a.id) >= 0) || sameSurname(String(a.name || '').trim().split(/\s+/).pop(), opt.leader)), names: ca.map(a => a.name).filter(Boolean) } : { known: false }; }
-  const corr = work.corr; // {known:bool, leader:bool|null}
-  if (r.pos.pos === 'first') r.author = ST.ok;
-  else if (corr && corr.known && corr.leader === true) { r.author = ST.ok; r.corrLeader = true; }
-  else if (r.pos.pos === 'unknown') r.author = ST.unk;
-  else if (r.pos.pos === 'none') { r.author = ST.check; r.notesKD.push('фамилия руководителя среди авторов не найдена — проверьте написание фамилии латиницей'); }
-  else if (corr && corr.known && corr.leader === false) r.author = ST.no;
-  else r.author = ST.check;
-  // годится ли для подсчёта «публикаций Q1–Q2 за 5 лет»
-  const parts = [r.found, r.year, r.type, r.qual];
-  r.counts = parts.includes(ST.no) ? ST.no : (parts.includes(ST.check) || parts.includes(ST.unk) ? ST.check : ST.ok);
-  if (r.pos.pos === 'none' && r.counts === ST.ok) r.counts = ST.check;
-  // годится ли для Варианта 2
-  const p2 = [r.found, r.year, r.type, r.ifSt, r.author];
-  r.v2 = p2.includes(ST.no) ? ST.no : (p2.includes(ST.check) || p2.includes(ST.unk) ? ST.check : ST.ok);
+  // corresponding author — как размечено в OpenAlex; найденный автор узнаётся по профилю
+  if (work.oaAuthors) { const ca = work.oaAuthors.filter(a => a.corr); work.corr = ca.length ? { known: true, names: ca.map(a => a.name).filter(Boolean) } : { known: false }; }
   return r;
-}
-
-/* ---------- итог по вариантам ----------
-   pubs — результаты judgePub; profile — {ok, check, total, source} или null; decl — заявлено в п. 1.6 (число или null) */
-function judgeVariants(pubs, profile, decl) {
-  const lOk = pubs.filter(p => p.counts === ST.ok).length, lCheck = pubs.filter(p => p.counts === ST.check).length;
-  const out = { listOk: lOk, listCheck: lCheck, v: {} };
-  const need = { 1: KD.v1pubs, 3: KD.v3pubs, 4: KD.v4pubs };
-  const best = Math.max(lOk, profile ? profile.ok : 0);
-  for (const n of [1, 3, 4]) {
-    const N = need[n]; let st, why;
-    if (best >= N) { st = ST.ok; why = `подтверждено ${best} при требуемых ${N}` + (lOk >= N ? ' (по списку из заявки)' : ` (по профилю автора: ${profile.source})`); }
-    else if (profile) { st = ST.check; const pot = profile.ok + profile.check; why = `по профилю автора (${profile.source}) подтверждено ${profile.ok}` + (profile.check ? `, ещё ${profile.check} под вопросом` : '') + `, по списку из заявки — ${lOk}; требуется ${N}. Открытые базы бывают неполными — проверьте вручную` + (pot < N ? ' (найдено меньше требуемого)' : ''); }
-    else { st = ST.check; why = `по списку из заявки подтверждено ${lOk}` + (lCheck ? `, ещё ${lCheck} под вопросом` : '') + ` при требуемых ${N}; в списке п. 2.3 не более 10 публикаций, и они не обязаны быть за 5 лет — профиль автора в открытой базе не найден`; }
-    if (decl != null && decl < N) why += `; в п. 1.6 заявлено ${decl} — меньше требуемых ${N}`;
-    out.v[n] = { st, why, need: N };
-  }
-  out.v[1].extra = 'Индекс Хирша (без самоцитирования) в открытых базах не проверяется — сверьте в профиле автора Scopus, WoS или РИНЦ.';
-  out.v[3].extra = 'Завершённый проект от 20 млн руб. проверяется по подтверждающему документу в заявке.';
-  out.v[4].extra = 'Возраст и бюджет проверяет утилита «Проверка заявок 2.1».';
-  // Вариант 2
-  const c2 = pubs.filter(p => p.v2 === ST.ok), m2 = pubs.filter(p => p.v2 === ST.check);
-  const num = p => '№ ' + (p.entry.num || pubs.indexOf(p) + 1);
-  if (c2.length) out.v[2] = { st: ST.ok, why: `есть статья (${c2.map(num).join(', ')}) в издании с показателем не ниже ${KD.ifHigh} по SCImago, руководитель — первый (corresponding) автор` };
-  else if (m2.length) out.v[2] = { st: ST.check, why: `возможные статьи: ${m2.map(num).join(', ')} — по каждой указано, что проверить` };
-  else if (!pubs.length) out.v[2] = { st: ST.unk, why: 'список публикаций пуст' };
-  else out.v[2] = { st: ST.no, why: `в списке нет статьи за 5 лет в издании с показателем от ${KD.ifLow} и выше, где руководитель — первый (corresponding) автор` };
-  if (profile && profile.v2 && profile.v2.length && out.v[2].st !== ST.ok) { out.v[2].st = ST.check; out.v[2].why += `; среди всех статей автора за период есть ${profile.v2.length} в изданиях с показателем от ${KD.ifLow}, где он первый или corresponding автор — см. список всех публикаций`; }
-  out.v[2].extra = `Показатель SCImago считается по Scopus и не равен импакт-фактору WoS; порог КД — ${KD.v2if}.`;
-  if (decl != null) {
-    out.decl = decl;
-    if (profile) out.declNote = profile.ok >= decl ? `заявленное число ${decl} подтверждается профилем автора (найдено ${profile.ok})` : `заявлено ${decl}, в профиле автора (${profile.source}) подтверждено ${profile.ok}` + (profile.check ? ` и ещё ${profile.check} под вопросом` : '') + ' — проверьте';
-    else out.declNote = `заявлено ${decl}; по списку подтверждено ${lOk} — полную сверку даёт только профиль автора (ORCID)`;
-  }
-  return out;
 }
 
 /* ---------- сведения об авторе, введённые человеком ----------
@@ -504,12 +440,12 @@ function detectLeader(works, variants) {
   return { works: n, cands: all.slice(0, 6), chosen: [], how: 'unclear' };
 }
 /* Оценка статьи из профиля автора. ids — профили руководителя в OpenAlex (для места среди авторов) */
-function judgeProfileWork(w, ids) { const r = judgeProfileWork0(w); r.ifSt = r.jv.ifSt;
+function judgeProfileWork(w, ids) { const r = judgeProfileWork0(w);
   if (w.authors && w.authors.length && ids && ids.length) { const i = w.authors.findIndex(a => ids.indexOf(a.id) >= 0); r.first = i === 0; r.corr = w.authors.some(a => a.corr && ids.indexOf(a.id) >= 0); r.corrKnown = w.authors.some(a => a.corr); r.pos = i < 0 ? '' : (i === 0 ? 'первый' : (i === w.authors.length - 1 ? 'последний' : (i + 1) + '-й') + ' из ' + w.authors.length);
     r.corrSt = corrOf(w.authors, ids); r.corrNames = w.authors.filter(a => a.corr && ids.indexOf(a.id) < 0).map(a => a.name).filter(Boolean); r.me = i >= 0 ? w.authors[i] : null; }
   return r; }
 /* Организации автора в статье: названия, распознанные базой, иначе строки из статьи */
 const instNames = me => !me ? [] : ((me.inst && me.inst.length) ? me.inst.map(x => x.name) : (me.raw || []));
-function judgeProfileWork0(w) { const j = findJournal(w.issns, w.journal); const jv = journalVerdict(j, w.year, null, null); return { w, j, jv, st: jv.qual === ST.ok ? ST.ok : (jv.qual === ST.no ? ST.no : ST.check) }; }
+function judgeProfileWork0(w) { const j = findJournal(w.issns, w.journal); const jv = journalVerdict(j, w.year, null, null); return { w, j, jv }; }
 
-if (typeof module !== 'undefined') module.exports = { instNames, CHANGES, corrOf, orgMatch, orgTokens, findDuplicates, isPreprint, VERSION, KD, ST, ST_NAME, norm, normIssn, lev, loadRef, findJournal, splitEntries, parseEntry, titleScore, canonName, leaderVariants, sameSurname, authorPosition, journalVerdict, sjAt, detectLeader, parseAuthorInput, orcidValid, wlAt, passFilter, parseFIO, nameMatch, translitVariants, judgePub, judgeVariants, judgeProfileWork, cleanDoi, fmtNum, fmtIssn };
+if (typeof module !== 'undefined') module.exports = { instNames, CHANGES, corrOf, orgMatch, orgTokens, findDuplicates, isPreprint, VERSION, ST, ST_NAME, norm, normIssn, lev, loadRef, findJournal, splitEntries, parseEntry, titleScore, canonName, leaderVariants, sameSurname, authorPosition, journalVerdict, sjAt, detectLeader, parseAuthorInput, orcidValid, wlAt, passFilter, parseFIO, nameMatch, translitVariants, judgePub, judgeProfileWork, matchScore, findDoi, FOUND_OK, FOUND_NEAR, cleanDoi, fmtNum, fmtIssn };

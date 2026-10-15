@@ -27,13 +27,43 @@ function crWork(m, via) {
     authors: (m.author || []).map(a => ({ given: a.given || '', family: a.family || '', name: a.name || '', orcid: (a.ORCID || '').replace(/^https?:\/\/orcid\.org\//, '') })) };
 }
 const CR_SELECT = 'DOI,title,author,container-title,ISSN,issued,type';
-/* Поиск статьи: по DOI, если он есть в записи, иначе по тексту записи. null — не найдено. */
+/* Поиск статьи: по DOI, если он есть в записи; иначе (или если DOI в базе не найден) — по тексту записи в Crossref (10 вариантов),
+   при слабом совпадении — ещё и в OpenAlex. Лучший вариант — по названию, году, изданию и первому автору (matchScore).
+   Возвращает найденную статью с полем alts (до 3 следующих вариантов) или null. */
 async function findWork(entry) {
-  if (entry.doi) { const j = await getJson(`${NET.crossref}/works/${encodeURIComponent(entry.doi)}`); if (j && j.message) return crWork(j.message, 'doi'); }
-  const j = await getJson(`${NET.crossref}/works?rows=4&select=${CR_SELECT}&query.bibliographic=${encodeURIComponent(entry.query.slice(0, 400))}`);
-  const items = (j && j.message && j.message.items) || []; let best = null;
-  for (const m of items) { const w = crWork(m, 'search'); w.score = titleScore(w.title, entry.query); if (w.title && (!best || w.score > best.score)) best = w; }
+  let doiMiss = '';
+  if (entry.doi) { const j = await getJson(`${NET.crossref}/works/${encodeURIComponent(entry.doi)}`); if (j && j.message) return crWork(j.message, 'doi'); doiMiss = entry.doi; }
+  const j = await getJson(`${NET.crossref}/works?rows=10&select=${CR_SELECT}&query.bibliographic=${encodeURIComponent(entry.query.slice(0, 400))}`);
+  let cands = ((j && j.message && j.message.items) || []).map(m => crWork(m, 'search')).filter(w => w.title);
+  const rank = list => { list.forEach(w => { const m = matchScore(w, entry); w.score = m.score; w.tScore = m.title; }); return list.sort((a, b) => b.score - a.score); };
+  rank(cands);
+  if ((!cands.length || cands[0].score < FOUND_OK) && NET.useOA) {
+    const oa = await oaSearchWorks(entry.query); if (oa.length) {
+      rank(oa); const seen = new Set(cands.map(w => w.doi).filter(Boolean));
+      cands = rank(cands.concat(oa.filter(w => !w.doi || !seen.has(w.doi))));
+    }
+  }
+  if (!cands.length) return null;
+  const best = cands[0]; best.alts = cands.slice(1).filter(w => w.score >= 0.3).slice(0, 3); if (doiMiss) best.doiMiss = doiMiss;
   return best;
+}
+/* Запасной поиск статьи в OpenAlex по тексту записи (без номеров, инициалов и чисел). Ошибки не мешают: пустой список. */
+async function oaSearchWorks(query) {
+  const q = String(query || '').replace(/\b\d+\b/g, ' ').replace(/\b[A-ZА-ЯЁ]\.\s?/g, ' ').replace(/[|/\\()\[\]«»"“”:;,.]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 250);
+  if (q.length < 12) return [];
+  try {
+    const j = await getJson(`${NET.openalex}/works?search=${encodeURIComponent(q)}&per-page=5&select=id,doi,title,publication_year,type,primary_location,authorships${oaParam()}`, 1);
+    return ((j && j.results) || []).map(oaWork).filter(w => w.title);
+  } catch (e) { if (e.kind === 'auth' || e.kind === 'limit') { NET.useOA = false; NET.oaOff = e.message; } return []; }
+}
+/* Статья из ответа OpenAlex в том же виде, что из Crossref */
+const OA_TYPE = { article: 'journal-article', review: 'review', preprint: 'posted-content', 'book-chapter': 'book-chapter', book: 'book', dataset: 'dataset', editorial: 'editorial', letter: 'letter', erratum: 'erratum', paratext: 'paratext' };
+function oaWork(w) {
+  const s = w.primary_location && w.primary_location.source, au = (w.authorships || []).map(oaShip);
+  const src = s ? s.type : '', ty = w.type === 'article' && src === 'conference' ? 'proceedings-article' : (OA_TYPE[w.type] || w.type || '');
+  const ca = au.filter(a => a.corr);
+  return { via: 'search', source: 'OpenAlex', oaId: w.id ? String(w.id).split('/').pop() : '', doi: (w.doi || '').replace(/^https?:\/\/doi\.org\//, '').toLowerCase(), title: w.title || '', journal: s ? s.display_name || '' : '', issns: s && s.issn ? s.issn : [], year: w.publication_year || null, type: ty,
+    authors: au.map(a => ({ given: '', family: '', name: a.name })), oaAuthors: au, oa: true, corr: ca.length ? { known: true, names: ca.map(a => a.name).filter(Boolean) } : { known: false } };
 }
 const oaParam = () => NET.oaKey ? '&api_key=' + encodeURIComponent(NET.oaKey) : '';
 /* Дополнение из OpenAlex: тип (article / review) и corresponding author. Ошибки не мешают основной проверке. */
@@ -45,7 +75,7 @@ async function enrichOA(work, leaderVars) {
   if (j.type === 'review' && work.type === 'journal-article') work.type = 'review';
   const au = j.authorships || [], corr = au.filter(a => a.is_corresponding);
   work.oaAuthors = au.map(oaShip);
-  if (corr.length) work.corr = { known: true, leader: corr.some(a => sameSurname(String((a.author && a.author.display_name) || a.raw_author_name || '').trim().split(/\s+/).pop(), leaderVars)), names: corr.map(a => a.author && a.author.display_name).filter(Boolean) };
+  if (corr.length) work.corr = { known: true, names: corr.map(a => a.author && a.author.display_name).filter(Boolean) };
   else work.corr = { known: false };
   const src = j.primary_location && j.primary_location.source;
   if (src && src.issn && !work.issns.length) work.issns = src.issn;
@@ -75,16 +105,26 @@ const oaShip = a => ({ id: a.author && a.author.id ? String(a.author.id).split('
 const cleanOrcid = s => { const m = String(s || '').toUpperCase().match(/\d{4}-?\d{4}-?\d{4}-?\d{3}[\dX]/); if (!m) return ''; const d = m[0].replace(/-/g, ''); return d.replace(/(.{4})(?=.)/g, '$1-'); };
 /* Профили авторов в OpenAlex */
 const OA_AUTHOR = 'id,ids,display_name,display_name_alternatives,orcid,works_count,cited_by_count,summary_stats,last_known_institutions';
-const oaAuthor = a => ({ id: String(a.id).split('/').pop(), name: a.display_name || '', orcid: a.orcid ? String(a.orcid).replace(/^https?:\/\/orcid\.org\//, '') : '', works: a.works_count, cited: a.cited_by_count, h: a.summary_stats && a.summary_stats.h_index != null ? a.summary_stats.h_index : null, inst: (a.last_known_institutions || []).map(x => x.display_name).filter(Boolean).join('; '), country: (a.last_known_institutions || []).map(x => x.country_code).filter(Boolean).join(' '), alt: a.display_name_alternatives || [], scopus: a.ids && a.ids.scopus ? (String(a.ids.scopus).match(/(\d{6,})(?!.*\d{6,})/) || [])[1] || '' : '' });
+const oaAuthor = a => ({ id: String(a.id).split('/').pop(), name: a.display_name || '', orcid: a.orcid ? String(a.orcid).replace(/^https?:\/\/orcid\.org\//, '') : '', works: a.works_count, cited: a.cited_by_count, h: a.summary_stats && a.summary_stats.h_index != null ? a.summary_stats.h_index : null, inst: (a.last_known_institutions || []).map(x => x.display_name).filter(Boolean).join('; '), instIds: (a.last_known_institutions || []).map(x => x.id ? String(x.id).split('/').pop() : '').filter(Boolean), topics: (a.topics || []).slice(0, 3).map(t => t.display_name).filter(Boolean), country: (a.last_known_institutions || []).map(x => x.country_code).filter(Boolean).join(' '), alt: a.display_name_alternatives || [], scopus: a.ids && a.ids.scopus ? (String(a.ids.scopus).match(/(\d{6,})(?!.*\d{6,})/) || [])[1] || '' : '' });
 async function authorInfo(ids) {
   const out = [];
   for (const id of ids.slice(0, 8)) { try { const j = await getJson(`${NET.openalex}/authors/${id}?select=${OA_AUTHOR}${oaParam()}`, 1); if (j) out.push(oaAuthor(j)); } catch (e) { } }
   return out;
 }
 /* Поиск автора по имени */
+/* Поиск автора по имени. Для выбора из найденных берутся и основные темы автора; если база не примет поле topics — без него. */
 async function searchAuthors(name) {
-  const j = await getJson(`${NET.openalex}/authors?search=${encodeURIComponent(name)}&per-page=10&select=${OA_AUTHOR}${oaParam()}`, 1);
+  const url = sel => `${NET.openalex}/authors?search=${encodeURIComponent(name)}&per-page=10&select=${sel}${oaParam()}`;
+  let j; try { j = await getJson(url(OA_AUTHOR + ',topics'), 1); } catch (e) { if (e.kind !== 'http') throw e; j = await getJson(url(OA_AUTHOR), 1); }
   return ((j && j.results) || []).map(oaAuthor);
+}
+/* Русские названия организаций из OpenAlex (один запрос на все). ids — I…; возвращает {id: название по-русски}. Ошибки — пустой ответ. */
+async function instRu(ids) {
+  ids = [...new Set(ids)].slice(0, 50); if (!ids.length || !NET.useOA) return {};
+  try {
+    const j = await getJson(`${NET.openalex}/institutions?filter=openalex:${ids.join('|')}&per-page=50&select=id,display_name,international${oaParam()}`, 1);
+    const out = {}; ((j && j.results) || []).forEach(x => { const ru = x.international && x.international.display_name && x.international.display_name.ru; if (ru) out[String(x.id).split('/').pop()] = ru; }); return out;
+  } catch (e) { return {}; }
 }
 /* Точный поиск автора по ORCID. null — в базе нет. */
 async function authorByOrcid(orcid) {
@@ -198,4 +238,4 @@ async function runSelfCheck(onStep) {
   }
   return out;
 }
-if (typeof module !== 'undefined') module.exports = { tfetch, PING_MS, oaShip, orcidExternalIds, NET, getJson, crWork, findWork, enrichOA, enrichWL, authorInfo, searchAuthors, authorByOrcid, authorByScopus, orcidSearch, runSelfCheck, SELF, authorWorks, cleanOrcid, pingAll };
+if (typeof module !== 'undefined') module.exports = { instRu, oaWork, oaSearchWorks, tfetch, PING_MS, oaShip, orcidExternalIds, NET, getJson, crWork, findWork, enrichOA, enrichWL, authorInfo, searchAuthors, authorByOrcid, authorByScopus, orcidSearch, runSelfCheck, SELF, authorWorks, cleanOrcid, pingAll };
