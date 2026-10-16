@@ -12,7 +12,7 @@ TOK=open(B+'orcid_token.txt',encoding='utf-8').read().strip() if os.path.exists(
 if TOK and not re.fullmatch(r'[0-9a-fA-F-]{20,64}',TOK): sys.exit('orcid_token.txt: токен не похож на токен ORCID')
 OAK=open(B+'openalex_key.txt',encoding='utf-8').read().strip() if os.path.exists(B+'openalex_key.txt') else ''
 if OAK and not re.fullmatch(r'[A-Za-z0-9_-]{8,128}',OAK): sys.exit('openalex_key.txt: ключ не похож на ключ OpenAlex')
-app='const ORCID_BUILTIN = '+json.dumps(TOK)+', OA_BUILTIN = '+json.dumps(OAK)+';\n'+''.join(js(B+'src/'+f)+'\n' for f in ['core.js','net.js','ocr.js','ui.js'])
+app='const ORCID_BUILTIN = '+json.dumps(TOK)+', OA_BUILTIN = '+json.dumps(OAK)+';\n'+''.join(js(B+'src/'+f)+'\n' for f in ['subfields.js','core.js','net.js','ocr.js','ui.js'])
 print('токен ORCID:', 'встроен' if TOK else 'нет', '; ключ OpenAlex:', 'встроен' if OAK else 'нет')
 tpl=open(B+'src/template.html',encoding='utf-8').read()
 # Шрифт Circe и логотип убраны 14.10.2026 (репозиторий открытый, лицензия шрифта) — системные шрифты

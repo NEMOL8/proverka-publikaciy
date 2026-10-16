@@ -2,7 +2,7 @@
 // Запуск: node evals/run.js
 const fs = require('fs'), path = require('path'); const B = path.join(__dirname, '..');
 const src = fs.readFileSync(B + '/src/core.js', 'utf8').replace(/if \(typeof module[^\n]*\n?$/m, '') + fs.readFileSync(B + '/src/net.js', 'utf8').replace(/if \(typeof module[^\n]*\n?$/m, '');
-const A = new Function(src + '\nreturn {getJson,tfetch,PING_MS,corrOf,orgMatch,findDuplicates,instNames,oaShip,orcidExternalIds,ST,matchScore,findDoi,FOUND_OK,oaWork,oaSearchWorks,instRu,loadRef,findJournal,splitEntries,parseEntry,titleScore,canonName,leaderVariants,sameSurname,authorPosition,journalVerdict,judgePub,judgeProfileWork,detectLeader,parseAuthorInput,orcidValid,wlAt,passFilter,parseFIO,nameMatch,translitVariants,NET,crWork,findWork,enrichOA,enrichWL,authorInfo,searchAuthors,authorByOrcid,authorByScopus,orcidSearch,runSelfCheck,SELF,authorWorks,cleanOrcid,pingAll};')();
+const A = new Function(src + '\nreturn {getJson,tfetch,PING_MS,corrOf,orgMatch,findDuplicates,instNames,oaShip,orcidExternalIds,ST,matchScore,findDoi,FOUND_OK,oaWork,oaSearchWorks,instRu,loadRef,findJournal,splitEntries,splitSiteEntries,detectSite,isUiLine,parseEntry,titleScore,canonName,leaderVariants,sameSurname,authorPosition,journalVerdict,judgePub,judgeProfileWork,detectLeader,parseAuthorInput,orcidValid,wlAt,passFilter,parseFIO,nameMatch,translitVariants,NET,crWork,findWork,enrichOA,enrichWL,authorInfo,searchAuthors,authorByOrcid,authorByScopus,orcidSearch,runSelfCheck,SELF,authorWorks,cleanOrcid,pingAll};')();
 const DATA = JSON.parse(fs.readFileSync(B + '/data/ref.json', 'utf8'));
 // вымышленные издания для кейсов «квартиль по годам»: история задана за 2021–2025, более ранние годы справочника — пусто
 const fake = (t, issn, h) => DATA.sj.push([t, issn, 0, '', 900000 + DATA.sj.length, ...Array(2 * (DATA.sjYears.length - 5)).fill(null), ...h]);
@@ -15,6 +15,92 @@ A.loadRef(DATA);
 const { ST } = A; let pass = 0, fail = 0; const fails = [];
 const eq = (name, got, want) => { const ok = JSON.stringify(got) === JSON.stringify(want); ok ? pass++ : (fail++, fails.push(`${name}: получено ${JSON.stringify(got)}, ожидалось ${JSON.stringify(want)}`)); };
 const jv = (issn, title) => A.journalVerdict(A.findJournal(issn ? [issn] : [], title));
+
+
+/* --- 0.7.10, правка 6: снимок страницы сайта — элементы интерфейса не попадают в запись.
+   Снимки вымышленные, составлены по обычному виду страниц этих баз. Ожидания записаны до прогона. --- */
+{
+  const ORCID_SHOT = `Works (2)
+Sort
+Синтез наноструктурированных покрытий на основе оксида титана
+Вестник вымышленного университета / 2021-05 | Journal article
+DOI: 10.1234/vym.2021.05.014
+CONTRIBUTORS: Иванов И. И.; Петрова М. С.
+Source: Вымышленный университет
+Preferred source (of 2)
+Thermal stability of layered composite coatings
+Journal of Fictional Materials / 2019 | Journal article
+CONTRIBUTORS: Ivanov I.; Smirnov A.
+Source: Crossref`;
+  const SCHOLAR_SHOT = `Статьи
+Синтез тонких плёнок методом магнетронного распыления
+ИИ Иванов, МС Петрова — Вестник вымышленного университета, 2021 — vym.example.ru
+… в работе рассмотрен синтез тонких плёнок оксида титана …
+☆ Сохранить 99 Цитировать Цитировано: 12 Похожие статьи Все версии статьи (3)
+Layered composite coatings for extreme conditions
+A Ivanov, M Petrova — Journal of Fictional Materials, 2019 — fict.example.org
+… coatings were tested under cyclic load …
+☆ Сохранить Цитировать Цитировано: 4 Похожие статьи Все версии статьи (2)
+Похожие запросы
+тонкие плёнки синтез
+магнетронное распыление`;
+  const SCOPUS_SHOT = `Documents
+1-2 of 2
+Sort by: Date (newest)
+Export all Download Select all
+Synthesis of nanostructured titanium oxide coatings
+Ivanov, I., Petrova, M.
+Journal of Fictional Materials, 2021, 14(3), pp. 211-220
+Cited by 12
+View abstract
+Thermal stability of layered composite coatings
+Ivanov, I., Smirnov, A.
+Fictional Surface Science, 2019, 8(1), pp. 15-24
+Cited by 4
+View abstract`;
+  const ELIB_SHOT = `Общее число публикаций: 2
+Число цитирований: 16
+Название
+Соавторы
+Журнал
+Год
+Синтез наноструктурированных покрытий оксида титана
+Иванов И.И., Петрова М.С.
+Вестник вымышленного университета
+2021
+Термическая стойкость слоистых композитных покрытий
+Иванов И.И., Смирнов А.В.
+Вымышленный journal материалов
+2019`;
+  const WOS_SHOT = `Author Records
+Create Citation Report
+1 - 2 of 2
+Synthesis of nanostructured titanium oxide coatings
+By: Ivanov, I; Petrova, M
+JOURNAL OF FICTIONAL MATERIALS, 2021, Volume 14, Issue 3, Pages 211-220
+Times Cited: 12
+View Abstract
+Thermal stability of layered composite coatings
+By: Ivanov, I; Smirnov, A
+FICTIONAL SURFACE SCIENCE, 2019, Volume 8, Issue 1, Pages 15-24
+Times Cited: 4
+View Abstract`;
+  eq('0.7.10 / снимок узнан: ORCID, Scholar, Scopus, eLibrary, WoS', [ORCID_SHOT, SCHOLAR_SHOT, SCOPUS_SHOT, ELIB_SHOT, WOS_SHOT].map(A.detectSite), ['orcid', 'scholar', 'scopus', 'elibrary', 'wos']);
+  const n = t => A.splitEntries(t).length, q = t => A.splitEntries(t).map(e => e.query).join(' | '), yr = t => A.splitEntries(t).map(e => e.years[0]);
+  eq('0.7.10 / ORCID: две записи, годы, DOI', [n(ORCID_SHOT), yr(ORCID_SHOT), A.splitEntries(ORCID_SHOT)[0].doi], [2, [2021, 2019], '10.1234/vym.2021.05.014']);
+  eq('0.7.10 / ORCID: «Source» и «Preferred source» в запись не попали', /Preferred source|Source:/i.test(q(ORCID_SHOT)), false);
+  eq('0.7.10 / Google Scholar: две записи и годы', [n(SCHOLAR_SHOT), yr(SCHOLAR_SHOT)], [2, [2021, 2019]]);
+  eq('0.7.10 / Google Scholar: «Цитировано», «Похожие статьи» и блок «Похожие запросы» выброшены', /Цитировано|Похожие статьи|Все версии|Похожие запросы|магнетронное распыление$/.test(q(SCHOLAR_SHOT)), false);
+  eq('0.7.10 / Scopus: две записи, годы, без «Cited by» и «View abstract»', [n(SCOPUS_SHOT), yr(SCOPUS_SHOT), /Cited by|View abstract|Export all|1-2 of 2/i.test(q(SCOPUS_SHOT))], [2, [2021, 2019], false]);
+  eq('0.7.10 / eLibrary: две записи, годы, без заголовков колонок и счётчиков', [n(ELIB_SHOT), yr(ELIB_SHOT), /Общее число публикаций|Число цитирований|^Соавторы$/m.test(q(ELIB_SHOT))], [2, [2021, 2019], false]);
+  eq('0.7.10 / WoS: две записи, годы, без «Times Cited» и «Create Citation Report»', [n(WOS_SHOT), yr(WOS_SHOT), /Times Cited|Create Citation Report|View Abstract/i.test(q(WOS_SHOT))], [2, [2021, 2019], false]);
+  eq('0.7.10 / в записи осталось название статьи', [/Синтез наноструктурированных покрытий/.test(q(ORCID_SHOT)), /Layered composite coatings/.test(q(SCHOLAR_SHOT)), /Synthesis of nanostructured/.test(q(SCOPUS_SHOT))], [true, true, true]);
+  // обычный список из заявки не должен попасть под разборщики сайтов
+  const PLAIN = `1. Иванов И.И., Петрова М.С. Синтез тонких плёнок оксида титана. Вестник университета. 2021. DOI 10.1234/a.2021.1
+2. Ivanov I., Smirnov A. Thermal stability of layered composites. Journal of Materials. 2019.`;
+  eq('0.7.10 / обычный список заявки: сайт не определяется, разбор прежний', [A.detectSite(PLAIN), n(PLAIN)], [null, 2]);
+  eq('0.7.10 / строка со статьёй интерфейсной не считается', [A.isUiLine('Cited by 12'), A.isUiLine('Next'), A.isUiLine('Страница 2 из 7'), A.isUiLine('Синтез тонких плёнок методом магнетронного распыления'), A.isUiLine('DOI: 10.1234/vym.2021.05.014')], [true, true, true, false, false]);
+}
 
 // --- издания (0.7.9: только факты, без выводов «да/нет»): [кейс, ISSN, название, квартиль за последний год, найдено в SCImago, найдено в Белом списке]
 const fj = (issn, title) => A.findJournal(issn ? [issn] : [], title);
@@ -240,8 +326,8 @@ eq('транслит / несколько написаний фамилии', A.
   let sa0 = await A.searchAuthors('Anna Sokolova'); eq('сеть / OpenAlex не принял поле topics — поиск автора без него', [sa0.length, calls.length], [1, 2]);
   N.fetch = async () => res(200, { results: [{ id: 'https://openalex.org/I77', display_name: 'Test University', international: { display_name: { ru: 'Тестовый университет', en: 'Test University' } } }] });
   eq('сеть / русские названия организаций одним запросом', await A.instRu(['I77', 'I77']), { I77: 'Тестовый университет' });
-  N.fetch = async () => res(200, { results: [{ id: 'https://openalex.org/A5', display_name: 'Anna Sokolova', display_name_alternatives: ['Соколова Анна Викторовна'], topics: [{ display_name: 'Seaweed Polymers' }, { display_name: 'Oil Spill Response' }], last_known_institutions: [{ id: 'https://openalex.org/I77', display_name: 'Test University' }] }] });
-  sa0 = await A.searchAuthors('Anna Sokolova'); eq('сеть / у кандидата темы и организация с идентификатором', [sa0[0].topics, sa0[0].instIds, sa0[0].alt], [['Seaweed Polymers', 'Oil Spill Response'], ['I77'], ['Соколова Анна Викторовна']]);
+  N.fetch = async () => res(200, { results: [{ id: 'https://openalex.org/A5', display_name: 'Anna Sokolova', display_name_alternatives: ['Соколова Анна Викторовна'], topics: [{ display_name: 'Seaweed Polymers', subfield: { display_name: 'Biomaterials' } }, { display_name: 'Oil Spill Response', subfield: { display_name: 'Pollution' } }], last_known_institutions: [{ id: 'https://openalex.org/I77', display_name: 'Test University' }] }] });
+  sa0 = await A.searchAuthors('Anna Sokolova'); eq('0.7.10 / у кандидата темы с разделом науки и организация с идентификатором', [sa0[0].topics, sa0[0].instIds, sa0[0].alt], [[{ name: 'Seaweed Polymers', sub: 'Biomaterials' }, { name: 'Oil Spill Response', sub: 'Pollution' }], ['I77'], ['Соколова Анна Викторовна']]);
   let n = 0; N.fetch = async () => (++n === 1 ? res(429, {}) : res(200, { message: { items: [crItem('10.1/b', 'Thermal conductivity of layered oxide ceramics under cyclic load')] } }));
   const t0 = Date.now(); w = await A.findWork(e1[0]); eq('сеть / после отказа 429 повтор', [w && w.doi, n, Date.now() - t0 >= 2000], ['10.1/b', 2, true]);
   N.fetch = async () => { throw new Error('Failed to fetch'); }; let er = null; try { await A.findWork(e1[0]); } catch (e) { er = e.kind; } eq('сеть / нет связи — ошибка, а не «не найдено»', er, 'net');

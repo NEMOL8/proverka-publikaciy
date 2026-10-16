@@ -1,8 +1,170 @@
 const ORCID_BUILTIN = "", OA_BUILTIN = "SUElqXUhQuvtt1VFt7031j";
+/* ===== Разделы науки OpenAlex (subfield) по-русски =====
+   У каждой темы OpenAlex (их около 4500) есть раздел науки — subfield, их около 250.
+   Сами темы не переводятся: названия узкие и длинные, перевод ненадёжен; переводится только раздел.
+   Справочник составлен один раз вручную, ИИ на странице не используется — его можно проверить и поправить.
+   Раздела нет в справочнике — показывается английское название как есть. */
+const SUBFIELD_RU = {
+  /* Сельское хозяйство и биология */
+  'Agronomy and Crop Science': 'Агрономия и растениеводство', 'Animal Science and Zoology': 'Зоотехния и зоология', 'Aquatic Science': 'Гидробиология',
+  'Ecology, Evolution, Behavior and Systematics': 'Экология, эволюция и систематика', 'Food Science': 'Пищевая наука', 'Forestry': 'Лесное хозяйство',
+  'Horticulture': 'Садоводство', 'Insect Science': 'Энтомология', 'Plant Science': 'Физиология и биология растений', 'Soil Science': 'Почвоведение',
+  'Agricultural and Biological Sciences (miscellaneous)': 'Сельское хозяйство и биология (прочее)',
+  /* Искусство и гуманитарные науки */
+  'Archeology': 'Археология', 'Classics': 'Классическая филология', 'Conservation': 'Сохранение наследия', 'History': 'История',
+  'Language and Linguistics': 'Языкознание', 'Literature and Literary Theory': 'Литературоведение', 'Music': 'Музыковедение', 'Philosophy': 'Философия',
+  'Religious Studies': 'Религиоведение', 'Visual Arts and Performing Arts': 'Изобразительное и исполнительское искусство',
+  'History and Philosophy of Science': 'История и философия науки', 'Arts and Humanities (miscellaneous)': 'Искусство и гуманитарные науки (прочее)',
+  /* Биохимия, генетика и молекулярная биология */
+  'Aging': 'Геронтология', 'Biochemistry': 'Биохимия', 'Biophysics': 'Биофизика', 'Biotechnology': 'Биотехнология', 'Cancer Research': 'Онкологические исследования',
+  'Cell Biology': 'Клеточная биология', 'Clinical Biochemistry': 'Клиническая биохимия', 'Developmental Biology': 'Биология развития', 'Endocrinology': 'Эндокринология',
+  'Genetics': 'Генетика', 'Molecular Biology': 'Молекулярная биология', 'Molecular Medicine': 'Молекулярная медицина', 'Physiology': 'Физиология',
+  'Structural Biology': 'Структурная биология', 'Biochemistry, Genetics and Molecular Biology (miscellaneous)': 'Биохимия и молекулярная биология (прочее)',
+  /* Экономика предприятия и управление */
+  'Accounting': 'Бухгалтерский учёт', 'Business and International Management': 'Бизнес и международный менеджмент', 'Industrial Relations': 'Трудовые отношения',
+  'Management Information Systems': 'Информационные системы управления', 'Management of Technology and Innovation': 'Управление технологиями и инновациями',
+  'Marketing': 'Маркетинг', 'Organizational Behavior and Human Resource Management': 'Организационное поведение и управление персоналом',
+  'Strategy and Management': 'Стратегия и управление', 'Tourism, Leisure and Hospitality Management': 'Туризм и гостеприимство',
+  'Business, Management and Accounting (miscellaneous)': 'Менеджмент и учёт (прочее)',
+  /* Химическая технология */
+  'Bioengineering': 'Биоинженерия', 'Catalysis': 'Катализ', 'Chemical Health and Safety': 'Химическая безопасность',
+  'Colloid and Surface Chemistry': 'Коллоидная химия и химия поверхности', 'Filtration and Separation': 'Фильтрация и разделение',
+  'Fluid Flow and Transfer Processes': 'Гидродинамика и процессы переноса', 'Process Chemistry and Technology': 'Химическая технология процессов',
+  'Chemical Engineering (miscellaneous)': 'Химическая технология (прочее)',
+  /* Химия */
+  'Analytical Chemistry': 'Аналитическая химия', 'Electrochemistry': 'Электрохимия', 'Inorganic Chemistry': 'Неорганическая химия',
+  'Organic Chemistry': 'Органическая химия', 'Physical and Theoretical Chemistry': 'Физическая и теоретическая химия', 'Spectroscopy': 'Спектроскопия',
+  'Chemistry (miscellaneous)': 'Химия (прочее)',
+  /* Информатика */
+  'Artificial Intelligence': 'Искусственный интеллект', 'Computational Theory and Mathematics': 'Теория вычислений',
+  'Computer Graphics and Computer-Aided Design': 'Компьютерная графика и САПР', 'Computer Networks and Communications': 'Компьютерные сети и связь',
+  'Computer Science Applications': 'Прикладная информатика', 'Computer Vision and Pattern Recognition': 'Компьютерное зрение и распознавание образов',
+  'Hardware and Architecture': 'Архитектура вычислительных систем', 'Human-Computer Interaction': 'Человеко-машинное взаимодействие',
+  'Information Systems': 'Информационные системы', 'Signal Processing': 'Обработка сигналов', 'Software': 'Программная инженерия',
+  'Computer Science (miscellaneous)': 'Информатика (прочее)',
+  /* Теория принятия решений */
+  'Information Systems and Management': 'Информационные системы и управление', 'Management Science and Operations Research': 'Исследование операций',
+  'Statistics, Probability and Uncertainty': 'Статистика и теория вероятностей', 'Decision Sciences (miscellaneous)': 'Теория принятия решений (прочее)',
+  /* Стоматология */
+  'Dental Assisting': 'Ассистирование в стоматологии', 'Dental Hygiene': 'Гигиена полости рта', 'Oral Surgery': 'Челюстно-лицевая хирургия',
+  'Orthodontics': 'Ортодонтия', 'Periodontics': 'Пародонтология', 'Dentistry (miscellaneous)': 'Стоматология (прочее)',
+  /* Науки о Земле */
+  'Atmospheric Science': 'Физика атмосферы', 'Computers in Earth Sciences': 'Вычислительные методы в науках о Земле', 'Earth-Surface Processes': 'Процессы на поверхности Земли',
+  'Economic Geology': 'Геология месторождений', 'Geochemistry and Petrology': 'Геохимия и петрология', 'Geology': 'Геология', 'Geophysics': 'Геофизика',
+  'Geotechnical Engineering and Engineering Geology': 'Геотехника и инженерная геология', 'Oceanography': 'Океанология', 'Paleontology': 'Палеонтология',
+  'Space and Planetary Science': 'Планетология и космические исследования', 'Stratigraphy': 'Стратиграфия',
+  'Earth and Planetary Sciences (miscellaneous)': 'Науки о Земле (прочее)',
+  /* Экономика и финансы */
+  'Economics and Econometrics': 'Экономика и эконометрика', 'Finance': 'Финансы', 'Economics, Econometrics and Finance (miscellaneous)': 'Экономика и финансы (прочее)',
+  /* Энергетика */
+  'Energy Engineering and Power Technology': 'Энергетика и энергетические технологии', 'Fuel Technology': 'Технология топлива',
+  'Nuclear Energy and Engineering': 'Ядерная энергетика', 'Renewable Energy, Sustainability and the Environment': 'Возобновляемая энергетика и устойчивое развитие',
+  'Energy (miscellaneous)': 'Энергетика (прочее)',
+  /* Техника и технологии */
+  'Aerospace Engineering': 'Авиационная и ракетно-космическая техника', 'Architecture': 'Архитектура', 'Automotive Engineering': 'Автомобильная техника',
+  'Biomedical Engineering': 'Биомедицинская инженерия', 'Building and Construction': 'Строительство', 'Civil and Structural Engineering': 'Строительные конструкции',
+  'Computational Mechanics': 'Вычислительная механика', 'Control and Systems Engineering': 'Управление и системная инженерия',
+  'Electrical and Electronic Engineering': 'Электротехника и электроника', 'Industrial and Manufacturing Engineering': 'Технология машиностроения',
+  'Mechanical Engineering': 'Машиностроение', 'Mechanics of Materials': 'Механика материалов', 'Media Technology': 'Медиатехнологии',
+  'Ocean Engineering': 'Морская техника', 'Safety, Risk, Reliability and Quality': 'Надёжность, риски и качество', 'Engineering (miscellaneous)': 'Техника и технологии (прочее)',
+  /* Экология и охрана окружающей среды */
+  'Ecological Modeling': 'Экологическое моделирование', 'Ecology': 'Экология', 'Environmental Chemistry': 'Химия окружающей среды',
+  'Environmental Engineering': 'Инженерная экология', 'Global and Planetary Change': 'Глобальные изменения', 'Health, Toxicology and Mutagenesis': 'Токсикология и мутагенез',
+  'Management, Monitoring, Policy and Law': 'Экологический мониторинг, политика и право', 'Nature and Landscape Conservation': 'Охрана природы и ландшафтов',
+  'Pollution': 'Загрязнение окружающей среды', 'Waste Management and Disposal': 'Обращение с отходами', 'Water Science and Technology': 'Водные технологии',
+  'Environmental Science (miscellaneous)': 'Науки об окружающей среде (прочее)',
+  /* Иммунология и микробиология */
+  'Applied Microbiology and Biotechnology': 'Прикладная микробиология и биотехнология', 'Immunology': 'Иммунология', 'Microbiology': 'Микробиология',
+  'Parasitology': 'Паразитология', 'Virology': 'Вирусология', 'Immunology and Microbiology (miscellaneous)': 'Иммунология и микробиология (прочее)',
+  /* Материаловедение */
+  'Biomaterials': 'Биоматериалы', 'Ceramics and Composites': 'Керамика и композиты', 'Electronic, Optical and Magnetic Materials': 'Электронные, оптические и магнитные материалы',
+  'Materials Chemistry': 'Химия материалов', 'Metals and Alloys': 'Металлы и сплавы', 'Polymers and Plastics': 'Полимеры и пластмассы',
+  'Surfaces, Coatings and Films': 'Поверхности, покрытия и плёнки', 'Nanoscience and Nanotechnology': 'Нанонаука и нанотехнологии',
+  'Materials Science (miscellaneous)': 'Материаловедение (прочее)',
+  /* Математика */
+  'Algebra and Number Theory': 'Алгебра и теория чисел', 'Analysis': 'Математический анализ', 'Applied Mathematics': 'Прикладная математика',
+  'Computational Mathematics': 'Вычислительная математика', 'Control and Optimization': 'Управление и оптимизация',
+  'Discrete Mathematics and Combinatorics': 'Дискретная математика и комбинаторика', 'Geometry and Topology': 'Геометрия и топология', 'Logic': 'Математическая логика',
+  'Mathematical Physics': 'Математическая физика', 'Modeling and Simulation': 'Моделирование', 'Numerical Analysis': 'Численные методы',
+  'Statistics and Probability': 'Статистика и теория вероятностей', 'Theoretical Computer Science': 'Теоретическая информатика', 'Mathematics (miscellaneous)': 'Математика (прочее)',
+  /* Медицина */
+  'Anatomy': 'Анатомия', 'Anesthesiology and Pain Medicine': 'Анестезиология и лечение боли', 'Cardiology and Cardiovascular Medicine': 'Кардиология',
+  'Complementary and Alternative Medicine': 'Комплементарная медицина', 'Critical Care and Intensive Care Medicine': 'Интенсивная терапия', 'Dermatology': 'Дерматология',
+  'Drug Guides': 'Справочники лекарственных средств', 'Embryology': 'Эмбриология', 'Emergency Medicine': 'Неотложная медицина',
+  'Endocrinology, Diabetes and Metabolism': 'Эндокринология и диабетология', 'Epidemiology': 'Эпидемиология', 'Family Practice': 'Общая врачебная практика',
+  'Gastroenterology': 'Гастроэнтерология', 'Genetics (clinical)': 'Клиническая генетика', 'Geriatrics and Gerontology': 'Гериатрия и геронтология',
+  'Health Informatics': 'Медицинская информатика', 'Health Policy': 'Политика здравоохранения', 'Hematology': 'Гематология', 'Hepatology': 'Гепатология',
+  'Histology': 'Гистология', 'Immunology and Allergy': 'Иммунология и аллергология', 'Infectious Diseases': 'Инфекционные болезни', 'Internal Medicine': 'Терапия',
+  'Microbiology (medical)': 'Медицинская микробиология', 'Nephrology': 'Нефрология', 'Neurology (clinical)': 'Клиническая неврология',
+  'Obstetrics and Gynecology': 'Акушерство и гинекология', 'Oncology': 'Онкология', 'Ophthalmology': 'Офтальмология',
+  'Orthopedics and Sports Medicine': 'Ортопедия и спортивная медицина', 'Otorhinolaryngology': 'Оториноларингология',
+  'Pathology and Forensic Medicine': 'Патология и судебная медицина', 'Pediatrics, Perinatology and Child Health': 'Педиатрия и неонатология',
+  'Pharmacology (medical)': 'Клиническая фармакология', 'Physiology (medical)': 'Клиническая физиология', 'Psychiatry and Mental Health': 'Психиатрия и психическое здоровье',
+  'Public Health, Environmental and Occupational Health': 'Общественное здоровье и гигиена труда', 'Pulmonary and Respiratory Medicine': 'Пульмонология',
+  'Radiology, Nuclear Medicine and Imaging': 'Лучевая диагностика и ядерная медицина', 'Rehabilitation': 'Реабилитация', 'Reproductive Medicine': 'Репродуктивная медицина',
+  'Rheumatology': 'Ревматология', 'Surgery': 'Хирургия', 'Transplantation': 'Трансплантология', 'Urology': 'Урология', 'Medicine (miscellaneous)': 'Медицина (прочее)',
+  /* Нейронауки */
+  'Behavioral Neuroscience': 'Поведенческая нейробиология', 'Biological Psychiatry': 'Биологическая психиатрия',
+  'Cellular and Molecular Neuroscience': 'Клеточная и молекулярная нейробиология', 'Cognitive Neuroscience': 'Когнитивная нейробиология',
+  'Developmental Neuroscience': 'Нейробиология развития', 'Endocrine and Autonomic Systems': 'Эндокринная и вегетативная системы', 'Neurology': 'Неврология',
+  'Sensory Systems': 'Сенсорные системы', 'Neuroscience (miscellaneous)': 'Нейронауки (прочее)',
+  /* Сестринское дело и здравоохранение */
+  'Advanced and Specialized Nursing': 'Специализированный сестринский уход', 'Assessment and Diagnosis': 'Оценка состояния и диагностика',
+  'Care Planning': 'Планирование ухода', 'Community and Home Care': 'Патронажный уход', 'Critical Care Nursing': 'Сестринское дело в интенсивной терапии',
+  'Emergency Nursing': 'Сестринское дело в неотложной помощи', 'Fundamentals and Skills': 'Основы и навыки ухода', 'Gerontology': 'Геронтологический уход',
+  'Issues, Ethics and Legal Aspects': 'Этика и правовые вопросы', 'Leadership and Management': 'Руководство и управление',
+  'LPN and LVN': 'Младший сестринский персонал', 'Maternity and Midwifery': 'Акушерское дело', 'Nurse Assisting': 'Помощь медсестре',
+  'Nutrition and Dietetics': 'Диетология', 'Oncology (nursing)': 'Сестринское дело в онкологии', 'Pediatrics': 'Педиатрический уход',
+  'Pharmacology (nursing)': 'Фармакология в сестринском деле', 'Psychiatric Mental Health': 'Психиатрический уход',
+  'Research and Theory': 'Исследования и теория сестринского дела', 'Review and Exam Preparation': 'Подготовка к аттестации',
+  'Nursing (miscellaneous)': 'Сестринское дело (прочее)',
+  /* Фармакология и фармацевтика */
+  'Drug Discovery': 'Разработка лекарств', 'Pharmaceutical Science': 'Фармацевтические науки', 'Pharmacology': 'Фармакология', 'Toxicology': 'Токсикология',
+  'Pharmacology, Toxicology and Pharmaceutics (miscellaneous)': 'Фармакология и фармацевтика (прочее)',
+  /* Физика и астрономия */
+  'Acoustics and Ultrasonics': 'Акустика и ультразвук', 'Astronomy and Astrophysics': 'Астрономия и астрофизика',
+  'Atomic and Molecular Physics, and Optics': 'Атомная и молекулярная физика, оптика', 'Condensed Matter Physics': 'Физика конденсированного состояния',
+  'Instrumentation': 'Приборостроение и измерения', 'Nuclear and High Energy Physics': 'Ядерная физика и физика высоких энергий', 'Radiation': 'Радиационная физика',
+  'Statistical and Nonlinear Physics': 'Статистическая и нелинейная физика', 'Surfaces and Interfaces': 'Физика поверхностей и границ раздела',
+  'Physics and Astronomy (miscellaneous)': 'Физика и астрономия (прочее)',
+  /* Психология */
+  'Applied Psychology': 'Прикладная психология', 'Clinical Psychology': 'Клиническая психология',
+  'Developmental and Educational Psychology': 'Возрастная и педагогическая психология', 'Experimental and Cognitive Psychology': 'Экспериментальная и когнитивная психология',
+  'Neuropsychology and Physiological Psychology': 'Нейропсихология и психофизиология', 'Social Psychology': 'Социальная психология',
+  'Psychology (miscellaneous)': 'Психология (прочее)',
+  /* Социальные науки */
+  'Anthropology': 'Антропология', 'Communication': 'Коммуникация и медиа', 'Cultural Studies': 'Культурология', 'Demography': 'Демография',
+  'Development': 'Исследования развития', 'Education': 'Образование и педагогика', 'Gender Studies': 'Гендерные исследования',
+  'Geography, Planning and Development': 'География и территориальное развитие', 'Health (social science)': 'Социология здоровья',
+  'Human Factors and Ergonomics': 'Эргономика и человеческий фактор', 'Law': 'Право', 'Library and Information Sciences': 'Библиотековедение и информационные науки',
+  'Life-span and Life-course Studies': 'Исследования жизненного пути', 'Linguistics and Language': 'Лингвистика', 'Political Science and International Relations': 'Политология и международные отношения',
+  'Public Administration': 'Государственное управление', 'Safety Research': 'Исследования безопасности', 'Sociology and Political Science': 'Социология и политические науки',
+  'Transportation': 'Транспорт', 'Urban Studies': 'Городские исследования', 'Social Sciences (miscellaneous)': 'Социальные науки (прочее)',
+  /* Ветеринария */
+  'Equine': 'Болезни лошадей', 'Food Animals': 'Сельскохозяйственные животные', 'Small Animals': 'Мелкие домашние животные', 'Veterinary (miscellaneous)': 'Ветеринария (прочее)',
+  /* Медицинские профессии */
+  'Chiropractics': 'Мануальная терапия', 'Complementary and Manual Therapy': 'Мануальная и комплементарная терапия', 'Emergency Medical Services': 'Скорая медицинская помощь',
+  'Health Information Management': 'Управление медицинской информацией', 'Medical Assisting and Transcription': 'Медицинское делопроизводство',
+  'Medical Laboratory Technology': 'Лабораторная диагностика', 'Medical Terminology': 'Медицинская терминология', 'Occupational Therapy': 'Эрготерапия',
+  'Optometry': 'Оптометрия', 'Pharmacy': 'Фармация', 'Physical Therapy, Sports Therapy and Rehabilitation': 'Физиотерапия и спортивная реабилитация',
+  'Podiatry': 'Подиатрия', 'Radiological and Ultrasound Technology': 'Лучевая и ультразвуковая техника', 'Respiratory Care': 'Респираторная помощь',
+  'Speech and Hearing': 'Логопедия и сурдология', 'Health Professions (miscellaneous)': 'Медицинские профессии (прочее)',
+};
+/* Раздел по-русски; если его нет в справочнике — английское название как есть */
+function subRu(name) { const n = String(name || '').trim(); return SUBFIELD_RU[n] || n; }
+if (typeof module !== 'undefined') module.exports = { SUBFIELD_RU, subRu };
+
 /* ===== Проверка публикаций: правила (без сети, без ИИ) ===== */
-const VERSION = '0.7.9', VERSION_DATE = '15.10.2026';
+const VERSION = '0.7.10', VERSION_DATE = '16.10.2026';
 /* Что нового — показывается на странице */
 const CHANGES = [
+  ['0.7.10', '16.10.2026', ['После «Найти публикации», «Найти автора» и выбора варианта страница сама переходит к результату; под шапкой — строка переходов со счётчиками, внизу справа — кнопка «К вводу».',
+    'Основные темы автора показываются по-русски (раздел науки OpenAlex); точное английское название — в подсказке при наведении.',
+    'Кнопка «Найти другого автора»: очищает поле и прежний результат, не трогая список публикаций.',
+    'Раздел «Несколько авторов» убран — остались список публикаций и автор.',
+    'Меньше текста и рамок: короткие подсказки, «Организация для сверки» — в «Дополнительно», индекс Хирша — одной строкой, сводка по квартилям — плашками.',
+    'Снимок страницы с сайта (ORCID, Google Scholar, Scopus, eLibrary, Web of Science и других): элементы интерфейса — пагинация, кнопки, «Cited by», баннеры — больше не попадают в текст записи и не портят поиск.',
+    'Оформление приведено к брендбуку: шрифт Verdana (замена Circe), прямые углы без скруглений, красный — только в крупных заголовках.']],
   ['0.7.9', '15.10.2026', ['Справочник SCImago — за 2006–2025 годы (был 2021–2025): квартиль и показатель на год публикации и для старых статей. Белого списка до 2023 года не было — у таких статей уровень 2023 года показан справочно.',
     'Поиск статей по списку: лучший вариант выбирается по названию, году, изданию и первому автору (из 10 вариантов вместо 4); если Crossref не нашёл — запасной поиск в OpenAlex; DOI узнаётся и с ошибками распознавания («1O.1016», пробелы); если DOI из списка не найден — поиск по тексту. Для спорных и ненайденных статей — до 3 ближайших вариантов с кнопкой «Это она» и ссылки на поиск в Google Scholar и eLibrary.',
     'Колонка «Показатель» переименована в «Импакт-фактор» (это по-прежнему «цитирований на документ за 2 года» SCImago — подпись под заголовком).',
@@ -96,8 +258,115 @@ function findJournal(issns, title) {
 /* ---------- разбор списка из заявки ---------- */
 const DOI_RE = /\b10\.\d{4,9}\/[^\s"<>]+/i;
 function cleanDoi(d) { return d.replace(/[.,;)\]]+$/, '').toLowerCase(); }
+
+/* ---------- снимок страницы сайта: отделяем текст публикаций от элементов интерфейса ----------
+   Снимок списка публикаций с любого сайта даёт вперемешку с текстом статей пагинацию, кнопки, счётчики и баннеры.
+   Правила — только регулярные выражения (ИИ не используется): непонятное не выбрасывается, а остаётся в записи. */
+const UI_RE = [
+  /^(page|страница)\s*\d+\s*(of|из)\s*\d+$/i, /^\d+\s*[-–—]\s*\d+\s+of\s+[\d\s,]+$/i, /^\d+\s+of\s+[\d\s,]+$/i,
+  /^(items|rows|results|documents)\s+per\s+page\b/i, /^показывать\s+по\b/i, /^(next|previous|prev|first|last|назад|далее|вперёд|вперед|ещё|еще)$/i,
+  /^[‹›«»<>→←⟩⟨|·•]+$/, /^\.{3}$/, /^…$/,
+  /^(sort\s+by|sorted\s+by|сортировать\s+по|сортировка|date\s+range|диапазон\s+дат|results\s+per\s+page|refine\s+by)\b/i, /^(sort|filter|filters|фильтр|фильтры|уточнить)\s*:?$/i,
+  /^(show\s+more(\s+detail)?|read\s+more|view\s+all|view\s+abstract|load\s+more|export(\s+all)?|download|share|print|copy|save|add\s+to\s+(library|list)|select\s+all|create\s+citation\s+report|analyze\s+results)\b[.:\s]*$/i,
+  /^(подробнее|показать\s+ещё|показать\s+еще|скачать|поделиться|экспорт|печать|выбрать\s+все|сохранить|добавить\s+в\s+список|в\s+избранное)\b[.:\s]*$/i,
+  /^(cited\s+by|times\s+cited|цитировано|цитируется|цитирований|число\s+цитирований)\s*[:\s]*[\d\s,]*$/i,
+  /^(цитировать|похожие\s+статьи|все\s+версии\s+статьи(\s*\(\d+\))?|related\s+articles|all\s+\d+\s+versions|cite)$/i,
+  /^(похожие\s+запросы|related\s+searches)$/i,
+  /^(source|источник)\s*:/i, /^preferred\s+source(\s*\(of\s*\d+\))?/i,
+  /^(cookie|cookies|accept(\s+all)?|sign\s+in|log\s+in|войти|регистрация|подписаться|принять)\b/i,
+  /^(общее\s+число\s+публикаций|число\s+публикаций|индекс\s+хирша)\s*[:\s]*[\d\s,]*$/i,
+  /^(название|соавторы|журнал|год|тип\s+публикации|документы|documents|authors|title|year|source\s+title)$/i,
+];
+/* Связка кнопок в одной строке («Export all Download Select all», «☆ Сохранить 99 Цитировать Цитировано: 12 Похожие статьи»):
+   если после удаления кнопочных слов, чисел и значков почти ничего не осталось — это элемент интерфейса, а не текст статьи */
+const BTN_WORDS = /(show\s+more(\s+detail)?|read\s+more|view\s+all|view\s+abstract|load\s+more|export(\s+all)?|download|share|print|copy|save|add\s+to\s+(library|list)|select\s+all|full\s+text|get\s+pdf|pdf|html|cited\s+by|times\s+cited|cite|related\s+articles|all\s+versions|versions?\s+of\s+this\s+article|подробнее|показать\s+(ещё|еще)|скачать|поделиться|экспорт|печать|выбрать\s+все|сохранить|цитировать|цитировано|цитирований|похожие\s+статьи|все\s+версии\s+статьи|похожие\s+запросы|полный\s+текст|назад|далее)/gi;
+function isBtnRow(t) {
+  const rest = String(t).replace(BTN_WORDS, ' ').replace(/[\d\s:;()\[\]☆★✓·•|,.\-–—]+/g, ' ').trim();
+  return rest.length <= 3;
+}
+/* Строка «интерфейсная», если совпала с правилом или если она короткая, без признаков названия статьи и повторяется в тексте */
+function isUiLine(l, repeats) {
+  const t = String(l || '').trim(); if (!t) return false;
+  if (DOI_RE.test(t) || findDoi(t)) return false;
+  if (UI_RE.some(re => re.test(t))) return true;
+  if (BTN_WORDS.test(t.toLowerCase()) && isBtnRow(t)) { BTN_WORDS.lastIndex = 0; return true; }
+  BTN_WORDS.lastIndex = 0;
+  const words = t.split(/\s+/);
+  if (words.length <= 3 && !/\b(19[5-9]\d|20[0-4]\d)\b/.test(t)) {
+    const long = words.filter(w => w.replace(/[^A-Za-zА-Яа-яЁё]/g, '').length >= 4).length;
+    if (!long) return true;                                          // «‹ 2 ›», «PDF», «1 of 5»
+    if (repeats && repeats.get(t.toLowerCase()) >= 3) return true;   // один и тот же текст в нескольких местах — кнопка, а не статья
+  }
+  return false;
+}
+/* Признаки конкретных сайтов. Список расширяемый: если признаков нет, работает общая разбивка. */
+function detectSite(text) {
+  const t = String(text || '');
+  if (/CONTRIBUTORS\s*:/i.test(t) && /(Source\s*:|Preferred\s+source)/i.test(t)) return 'orcid';
+  if (/(Цитировать|Все\s+версии\s+статьи|versions\s+of\s+this\s+article|Cited\s+by\s+\d+)/i.test(t) && /^.+\s[—–-]\s.*(19|20)\d{2}\s*[—–-]\s*\S+/m.test(t)) return 'scholar';
+  if (/(Общее\s+число\s+публикаций|Число\s+цитирований|elibrary|РИНЦ)/i.test(t) && /(Соавторы|Журнал)/i.test(t)) return 'elibrary';
+  if (/^By\s*:/im.test(t) && /(Times\s+Cited|Create\s+Citation\s+Report)/i.test(t)) return 'wos';
+  if (/(View\s+abstract|Cited\s+by|Documents)/i.test(t) && /\d+\s*[-–—]\s*\d+\s+of\s+[\d\s,]+/i.test(t)) return 'scopus';
+  return null;
+}
+/* Разбивка по карточкам конкретного сайта. Возвращает массив блоков строк или null, если признаки не подтвердились. */
+function splitBySite(lines, site) {
+  const L = lines.filter(Boolean), blocks = []; let cur = null;
+  const push = () => { if (cur && cur.length) blocks.push(cur); cur = null; };
+  if (site === 'orcid') {
+    // карточка ORCID «Works»: заголовок, под ним «ГГГГ[-ММ] | Тип» или «Журнал / ГГГГ[-ММ] | Тип»
+    const meta = /^(?:.+\/\s*)?(19|20)\d{2}(-\d{2})?\s*\|\s*\S+/;
+    for (let i = 0; i < L.length; i++) {
+      if (meta.test(L[i]) && i > 0) { const head = cur && cur.length ? cur.pop() : L[i - 1]; push(); cur = [head, L[i]]; continue; }
+      if (!cur) cur = []; cur.push(L[i]);
+    }
+    push();
+    return blocks.filter(b => b.length >= 2);
+  }
+  if (site === 'scholar') {
+    // карточка Google Scholar: заголовок, строка «Авторы — Журнал, год — сайт», сниппет (с «…»), подвал
+    const auth = /^.+\s[—–-]\s.*(19|20)\d{2}/;
+    for (let i = 0; i < L.length; i++) {
+      if (auth.test(L[i]) && i > 0) { const head = cur && cur.length ? cur.pop() : L[i - 1]; push(); cur = [head, L[i]]; continue; }
+      if (!cur) continue;                                       // до первой карточки — шапка страницы
+      if (/^[….]/.test(L[i])) continue;                         // сниппет в запись не входит
+      cur.push(L[i]);
+    }
+    push();
+    return blocks.filter(b => b.length >= 2);
+  }
+  if (site === 'scopus' || site === 'wos' || site === 'elibrary') {
+    // карточка: заголовок, затем авторы и издание; строка с годом закрывает карточку
+    const yr = /\b(19[5-9]\d|20[0-4]\d)\b/;
+    for (let i = 0; i < L.length; i++) {
+      if (!cur) { cur = [L[i]]; if (yr.test(L[i]) && L[i].split(/\s+/).length > 6) push(); continue; }
+      cur.push(L[i]);
+      if (yr.test(L[i])) push();
+    }
+    push();
+    return blocks.filter(b => b.join(' ').length >= 25);
+  }
+  return null;
+}
+/* Текст снимка с известного сайта → записи. null, если сайт не узнан. */
+function splitSiteEntries(text) {
+  let lines = String(text || '').replace(/\r/g, '').split('\n').map(l => l.replace(/\s+/g, ' ').trim());
+  const site = detectSite(lines.join('\n'));
+  if (!site) return null;
+  const rel = lines.findIndex(l => /^(похожие\s+запросы|related\s+searches)$/i.test(l));
+  if (rel >= 0) lines = lines.slice(0, rel);                    // блок подсказок в конце страницы — целиком
+  const repeats = new Map(); lines.forEach(l => { const k = l.toLowerCase(); if (k) repeats.set(k, (repeats.get(k) || 0) + 1); });
+  lines = lines.filter(l => !isUiLine(l, repeats));
+  const blocks = splitBySite(lines, site);
+  if (!blocks || !blocks.length) return null;
+  const out = blocks.map(b => parseEntry(b.join('\n'))).filter(e => e.query.length >= 12);
+  if (!out.length) return null;
+  out.forEach(e => { e.site = site; });
+  return out;
+}
 /* Делит вставленный или распознанный текст на отдельные публикации */
 function splitEntries(text) {
+  const site = splitSiteEntries(text); if (site) return site;
   const lines = String(text || '').replace(/\r/g, '').split('\n').map(l => l.replace(/[ \t ]+/g, ' ').trim());
   const numRe = /^(\d{1,2})\s*[.)]\s*(?=\S)/;
   const nums = lines.map(l => { const m = l.match(numRe); return m ? +m[1] : null; });
@@ -449,7 +718,7 @@ function judgeProfileWork(w, ids) { const r = judgeProfileWork0(w);
 const instNames = me => !me ? [] : ((me.inst && me.inst.length) ? me.inst.map(x => x.name) : (me.raw || []));
 function judgeProfileWork0(w) { const j = findJournal(w.issns, w.journal); const jv = journalVerdict(j, w.year, null, null); return { w, j, jv }; }
 
-if (typeof module !== 'undefined') module.exports = { instNames, CHANGES, corrOf, orgMatch, orgTokens, findDuplicates, isPreprint, VERSION, ST, ST_NAME, norm, normIssn, lev, loadRef, findJournal, splitEntries, parseEntry, titleScore, canonName, leaderVariants, sameSurname, authorPosition, journalVerdict, sjAt, detectLeader, parseAuthorInput, orcidValid, wlAt, passFilter, parseFIO, nameMatch, translitVariants, judgePub, judgeProfileWork, matchScore, findDoi, FOUND_OK, FOUND_NEAR, cleanDoi, fmtNum, fmtIssn };
+if (typeof module !== 'undefined') module.exports = { splitSiteEntries, detectSite, isUiLine, instNames, CHANGES, corrOf, orgMatch, orgTokens, findDuplicates, isPreprint, VERSION, ST, ST_NAME, norm, normIssn, lev, loadRef, findJournal, splitEntries, parseEntry, titleScore, canonName, leaderVariants, sameSurname, authorPosition, journalVerdict, sjAt, detectLeader, parseAuthorInput, orcidValid, wlAt, passFilter, parseFIO, nameMatch, translitVariants, judgePub, judgeProfileWork, matchScore, findDoi, FOUND_OK, FOUND_NEAR, cleanDoi, fmtNum, fmtIssn };
 
 /* ===== Запросы в открытые базы (Crossref, OpenAlex) ===== */
 const NET = { orcid: 'https://pub.orcid.org', orcidToken: '', useORCID: true, crossref: 'https://api.crossref.org', openalex: 'https://api.openalex.org', wl: 'https://journalrank.rcsi.science/api', oaKey: '', useOA: true, useWL: true, wlCache: new Map(), srcCache: new Map(), log: [], fetch: null, pause: 120, timeout: 20000 };
@@ -558,7 +827,7 @@ const oaShip = a => ({ id: a.author && a.author.id ? String(a.author.id).split('
 const cleanOrcid = s => { const m = String(s || '').toUpperCase().match(/\d{4}-?\d{4}-?\d{4}-?\d{3}[\dX]/); if (!m) return ''; const d = m[0].replace(/-/g, ''); return d.replace(/(.{4})(?=.)/g, '$1-'); };
 /* Профили авторов в OpenAlex */
 const OA_AUTHOR = 'id,ids,display_name,display_name_alternatives,orcid,works_count,cited_by_count,summary_stats,last_known_institutions';
-const oaAuthor = a => ({ id: String(a.id).split('/').pop(), name: a.display_name || '', orcid: a.orcid ? String(a.orcid).replace(/^https?:\/\/orcid\.org\//, '') : '', works: a.works_count, cited: a.cited_by_count, h: a.summary_stats && a.summary_stats.h_index != null ? a.summary_stats.h_index : null, inst: (a.last_known_institutions || []).map(x => x.display_name).filter(Boolean).join('; '), instIds: (a.last_known_institutions || []).map(x => x.id ? String(x.id).split('/').pop() : '').filter(Boolean), topics: (a.topics || []).slice(0, 3).map(t => t.display_name).filter(Boolean), country: (a.last_known_institutions || []).map(x => x.country_code).filter(Boolean).join(' '), alt: a.display_name_alternatives || [], scopus: a.ids && a.ids.scopus ? (String(a.ids.scopus).match(/(\d{6,})(?!.*\d{6,})/) || [])[1] || '' : '' });
+const oaAuthor = a => ({ id: String(a.id).split('/').pop(), name: a.display_name || '', orcid: a.orcid ? String(a.orcid).replace(/^https?:\/\/orcid\.org\//, '') : '', works: a.works_count, cited: a.cited_by_count, h: a.summary_stats && a.summary_stats.h_index != null ? a.summary_stats.h_index : null, inst: (a.last_known_institutions || []).map(x => x.display_name).filter(Boolean).join('; '), instIds: (a.last_known_institutions || []).map(x => x.id ? String(x.id).split('/').pop() : '').filter(Boolean), topics: (a.topics || []).slice(0, 6).map(t => ({ name: t.display_name || '', sub: (t.subfield && t.subfield.display_name) || '' })).filter(t => t.name || t.sub), country: (a.last_known_institutions || []).map(x => x.country_code).filter(Boolean).join(' '), alt: a.display_name_alternatives || [], scopus: a.ids && a.ids.scopus ? (String(a.ids.scopus).match(/(\d{6,})(?!.*\d{6,})/) || [])[1] || '' : '' });
 async function authorInfo(ids) {
   const out = [];
   for (const id of ids.slice(0, 8)) { try { const j = await getJson(`${NET.openalex}/authors/${id}?select=${OA_AUTHOR}${oaParam()}`, 1); if (j) out.push(oaAuthor(j)); } catch (e) { } }
@@ -802,24 +1071,25 @@ async function init() {
   // кнопки и поля работают сразу; поиск включается, когда загружены справочники
   $('file').addEventListener('change', e => addImages([...e.target.files]));
   $('afile').addEventListener('change', e => authorImage([...e.target.files]));
-  $('gfile').addEventListener('change', e => groupImage([...e.target.files]));
-  document.addEventListener('paste', e => { const im = [...(e.clipboardData ? e.clipboardData.items : [])].filter(i => i.type.startsWith('image/')).map(i => i.getAsFile()); if (!im.length) return; e.preventDefault(); if (document.activeElement === $('author')) authorImage(im); else if (document.activeElement === $('grp')) groupImage(im); else addImages(im); });
+  document.addEventListener('paste', e => { const im = [...(e.clipboardData ? e.clipboardData.items : [])].filter(i => i.type.startsWith('image/')).map(i => i.getAsFile()); if (!im.length) return; e.preventDefault(); if (document.activeElement === $('author')) authorImage(im); else addImages(im); });
   const dz = $('drop'); ['dragover', 'dragenter'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('on'); })); ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('on'); }));
   dz.addEventListener('drop', e => addImages([...e.dataTransfer.files].filter(f => f.type.startsWith('image/'))));
-  $('go').addEventListener('click', runList); $('ago').addEventListener('click', runAuthor); $('ggo').addEventListener('click', runGroup); $('ping').addEventListener('click', ping); $('self').addEventListener('click', selfCheck); $('copy').addEventListener('click', copyList); $('acopy').addEventListener('click', copyAuthor); $('gcopy').addEventListener('click', copyGroup);
-  $('list').addEventListener('input', countEntries); $('author').addEventListener('input', showParsed); $('grp').addEventListener('input', countGroup);
+  $('go').addEventListener('click', runList); $('ago').addEventListener('click', runAuthor); $('anew').addEventListener('click', resetAuthor); $('ping').addEventListener('click', ping); $('self').addEventListener('click', selfCheck); $('copy').addEventListener('click', copyList); $('acopy').addEventListener('click', copyAuthor);
+  $('list').addEventListener('input', countEntries); $('author').addEventListener('input', showParsed);
   $('author').addEventListener('keydown', e => { if (e.key === 'Enter') runAuthor(); });
-  $('org').addEventListener('change', () => { renderList(); renderAuthor(); renderGroup(); });
+  $('org').addEventListener('change', () => { renderList(); renderAuthor(); });
+  window.addEventListener('scroll', navScroll, { passive: true });
   try { $('oaKey').value = localStorage.getItem('pc_oaKey') || ''; $('orcidToken').value = localStorage.getItem('pc_orcidToken') || ''; $('org').value = localStorage.getItem('pc_org') || ''; } catch (e) { }
   if (OA_BUILTIN) { $('oaKey').placeholder = 'встроенный ключ уже подключён — поле можно не заполнять'; }
   if (ORCID_BUILTIN) { $('orcidToken').placeholder = 'встроенный токен уже подключён — поле можно не заполнять'; $('orcidNote').textContent = 'В эту сборку встроен токен ORCID. Своё значение в поле заменит его только в этом браузере.'; }
   $('org').addEventListener('input', () => { try { localStorage.setItem('pc_org', $('org').value); } catch (e) { } });
-  if (!ocrAvailable()) { $('drop').innerHTML = 'Распознавание снимков в эту сборку не включено — вставьте список текстом.'; $('afile').style.display = 'none'; $('gfile').style.display = 'none'; }
+  if (!ocrAvailable()) { $('drop').innerHTML = 'Распознавание снимков в эту сборку не включено — вставьте список текстом.'; $('afile').style.display = 'none'; }
+  updateNav(); navScroll();
   await loadData();
 }
 /* Справочники: в одной странице — внутри, на сайте — файл data/ref.json (около 8 МБ) с показом хода загрузки и ограничением по времени */
 async function loadData() {
-  const btns = ['go', 'ago', 'ggo'];
+  const btns = ['go', 'ago'];
   try {
     const el = $('ref-data'); let data;
     if (el) data = JSON.parse(el.textContent);
@@ -843,8 +1113,7 @@ async function loadData() {
 const W = { entries: null, works: [], pubs: [], netDown: '', auto: null, dups: [] };
 const newS = () => ({ prof: null, cands: null, orcCands: null, similar: null, msgs: [], parsed: null, orcIds: null });
 let AU = newS();
-const G = { items: [] };
-const stOf = k => k < 0 ? AU : G.items[k].S;
+const stOf = () => AU;
 function showParsed() {
   const p = parseAuthorInput($('author').value), c = [];
   if (p.name) c.push('имя: <b>' + esc(p.name) + '</b>'); if (p.orcid) c.push('ORCID: <b>' + p.orcid + '</b>'); if (p.orcidBad) c.push(chip('check', 'ORCID с ошибкой') + ' ' + p.orcidBad + ' — контрольная цифра не сходится, сверьте с источником');
@@ -893,14 +1162,63 @@ function applyNet() { NET.useORCID = $('useORCID').checked; NET.orcidOff = ''; N
 const auIds = () => AU.prof && !AU.prof.err ? AU.prof.ids : [];
 function curOpt() { return { leaderIds: auIds() }; }
 function rejudge() { const opt = curOpt(); W.opt = opt; W.pubs = W.entries.map((e, i) => { const p = judgePub(e, W.works[i], opt); if (W.works[i] === undefined) p.notes = ['запрос не выполнен: ' + W.netDown]; return p; }); W.dups = findDuplicates(W.pubs); }
-function renderAll() { renderList(); renderAuthor(); renderGroup(); }
+function renderAll() { renderList(); renderAuthor(); updateNav(); }
+
+/* Правка 2: раздел науки по-русски (справочник subfields.js); точная тема OpenAlex — в подсказке */
+function topicsHtml(a) {
+  const ts = a.topics || []; if (!ts.length) return '<span class="dim">нет данных</span>';
+  const by = new Map();
+  ts.forEach(t => { const sub = (t && (t.sub || t.name)) || String(t || ''); if (!sub) return; const o = by.get(sub) || []; const nm = t && t.name ? t.name : String(t || ''); if (nm && nm !== sub) o.push(nm); by.set(sub, o); });
+  const out = [...by.entries()].slice(0, 3);
+  if (!out.length) return '<span class="dim">нет данных</span>';
+  return out.map(([sub, names]) => `<span class="topic" title="${esc('OpenAlex: ' + (names.length ? names.join('; ') : sub))}">${esc(subRu(sub))}</span>`).join('');
+}
+/* Правка 5: длинное примечание — коротким словом с подсказкой, полный текст под «подробнее» */
+const NOTE_SHORT = [[/^возможный дубль/, 'возможный дубль'], [/не совпадает с годом в базе/, 'год не совпадает'], [/совпадает с записью не полностью/, 'совпадение неполное'],
+  [/DOI из списка/, 'DOI не найден'], [/несколько изданий с таким ISSN/, 'издание неоднозначно'], [/издание найдено по названию/, 'найдено по названию'],
+  [/исключено из Белого списка/, 'исключено из Белого списка'], [/сайт Белого списка отвечает иначе/, 'сайт БС отвечает иначе'], [/это разные показатели/, 'импакт-фактор расходится'],
+  [/не найдено — проверьте вручную/, 'не найдена'], [/ближайшая найденная статья не похожа/, 'варианты не подошли'], [/в SCImago издание есть только до/, 'в SCImago данных за год нет'],
+  [/взят \d{4} год/, 'взят ближайший год'], [/в списке нет №/, 'пропущен номер в списке']];
+function notesHtml(notes) {
+  if (!notes.length) return '';
+  return notes.map(n => {
+    const tag = /^возможный дубль/.test(n) ? chip('check', 'дубль?') + ' ' : '';
+    const m = NOTE_SHORT.find(x => x[0].test(n));
+    if (!m || n.length <= 60) return tag + esc(n);
+    return tag + `<span title="${esc(n)}">${esc(m[1])}</span><details class="mini"><summary>подробнее</summary><span class="dim">${esc(n)}</span></details>`;
+  }).join('<br>');
+}
+
+/* ----- Правка 1: переход к результату и строка быстрых переходов ----- */
+/* После действия страница сама показывает свой результат: искать его прокруткой не нужно */
+function goTo(id) {
+  const el = $(id); if (!el) return;
+  try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { el.scrollIntoView(); }
+}
+/* Пункты строки переходов появляются, когда есть что показать; рядом — счётчики */
+function navItems() {
+  const out = [{ id: 'inp', t: 'Ввод' }];
+  if (W.entries) out.push({ id: 'outList', t: 'Публикации из списка', n: W.pubs.length });
+  if (AU.prof || AU.cands || AU.orcCands || (AU.msgs && AU.msgs.length)) {
+    out.push({ id: 'outAuthor', t: 'Автор' });
+    if (AU.prof && !AU.prof.err) out.push({ id: 'auWorks', t: 'Публикации автора', n: AU.prof.js.length });
+  }
+  return out;
+}
+function updateNav() {
+  const b = $('nav'); if (!b) return; const it = navItems();
+  if (it.length <= 1) { b.style.display = 'none'; b.innerHTML = ''; return; }
+  b.style.display = 'flex'; b.innerHTML = it.map(x => `<a href="javascript:goTo('${x.id}')">${esc(x.t)}${x.n != null ? ' <b>' + x.n + '</b>' : ''}</a>`).join('<span class="nsep">·</span>');
+}
+/* Кнопка «К вводу» — когда пользователь ушёл вниз */
+function navScroll() { const b = $('toinp'); if (b) b.style.display = window.scrollY > 500 ? '' : 'none'; }
 
 /* ----- Режим 1: список публикаций ----- */
 async function runList() {
   if (BUSY || !REF) return;
   const entries = splitEntries($('list').value);
   if (!entries.length) { $('status').textContent = 'Список пуст: вставьте текст или снимок.'; return; }
-  BUSY = true; $('go').disabled = true; applyNet(); NET.log = [];
+  BUSY = true; $('go').disabled = true; applyNet(); NET.log = []; goTo('status');
   const works = []; let netDown = '';
   for (let i = 0; i < entries.length; i++) {
     $('status').textContent = `Ищу публикацию ${i + 1} из ${entries.length}…`;
@@ -912,7 +1230,7 @@ async function runList() {
   W.entries = entries; W.works = works; W.netDown = netDown; W.auto = null; W.numbered = entries.some(e => e.num != null);
   // если автор ещё не выбран, а у статей списка есть общий автор — показать его публикации сразу
   if (!netDown && !AU.prof && !$('author').value.trim()) { const det = detectLeader(works, []); if (det.how === 'auto') { W.auto = det.chosen[0].name; AU = newS(); await loadProfile(AU, det.chosen.map(a => a.id), 'общий автор статей из списка — проверьте, что это нужный человек'); await fetchOrcidIds(AU); } }
-  rejudge(); renderAll(); BUSY = false; $('go').disabled = false;
+  rejudge(); renderAll(); BUSY = false; $('go').disabled = false; goTo('outList');
   $('status').textContent = netDown ? 'Поиск неполный: ' + netDown + '. Нажмите «Проверить связь».' : 'Готово.';
 }
 const nchip = t => `<span class="chip n">${esc(t)}</span>`;
@@ -996,11 +1314,11 @@ function authorsCell(p) {
 
 /* ----- Фильтры ----- */
 const FLT0 = () => ({ q: [], wl: [], yFrom: 0, yTo: 0, corr: [], ifFrom: 0, org: [] });
-const FLT = { list: FLT0(), au: FLT0(), grp: FLT0() };
+const FLT = { list: FLT0(), au: FLT0() };
 function rowKey(year, j, jv) { if (!j) return { y: year }; const a = j.wl ? wlAt(j.wl, year) : null; return { y: year, qY: j.sj ? (jv.qY || 0) : 0, wl: a ? (a.excluded ? 0 : a.lv) : null, excl: !!(a && a.excluded), cpd: jv && jv.cpd != null ? jv.cpd : null }; }
 const profKey = x => Object.assign(rowKey(x.w.year, x.j, x.jv), { corr: x.corrSt || 'unk', org: $('org').value.trim() ? orgOf(x.me).st : null });
 function listKey(p) { if (!p.work) return {}; const k = rowKey(p.work.year, p.j, p.jv), m = listMe(p.work); k.corr = m && m.me ? m.corr : 'unk'; k.org = m && m.me && $('org').value.trim() ? orgOf(m.me).st : 'unk'; return k; }
-const reFlt = id => id === 'list' ? renderList() : (id === 'au' ? renderAuthor() : renderGroup());
+const reFlt = id => id === 'list' ? renderList() : renderAuthor();
 function filterBar(id, shown, total, noCpd) {
   const f = FLT[id], corrOff = id === 'list' && !auIds().length, orgOn = !!$('org').value.trim();
   const pill = (grp, v, t, dis) => `<label class="pill${f[grp].indexOf(v) >= 0 ? ' on' : ''}${dis ? ' off' : ''}"${dis ? ' title="заработает, когда найден автор (раздел 2)"' : ''}><input type="checkbox" ${f[grp].indexOf(v) >= 0 ? 'checked' : ''} ${dis ? 'disabled' : ''} onchange="setFlt('${id}','${grp}','${v}',this.checked)">${t}</label>`;
@@ -1048,7 +1366,7 @@ function renderList() {
   h += `<table class="t pubs"><tr><th style="width:3%">№</th><th style="width:24%">Публикация</th><th style="width:14%">Издание</th><th style="width:11%">${TH_Q}</th><th style="width:11%">${TH_WL}</th><th style="width:10%">${TH_IF}</th><th style="width:15%">Авторы</th><th>Примечания</th></tr>`;
   rows.forEach(({ p, i }) => {
     const w = p.work, e = p.entry, notes = p.notes.concat(dupNotes(i));
-    const nh = notes.map(n => /^возможный дубль/.test(n) ? chip('check', 'дубль?') + ' ' + esc(n) : esc(n)).join('<br>');
+    const nh = notesHtml(notes);
     if (!w) { h += `<tr><td>${numOf(e, i)}</td><td><span class="dim">${esc(e.raw.length > 220 ? e.raw.slice(0, 220) + '…' : e.raw)}</span><br>${chip('unk', p.found === 'no' ? 'не найдена' : 'не проверена')}${altsHtml(i)}${p.found === 'no' ? searchLinks(e) : ''}</td><td colspan="5" class="dim">Статья не найдена в открытых базах — квартиль и остальное по ней не определены. Это не значит, что её нет.</td><td>${nh}</td></tr>`; return; }
     const url = w.doi ? 'https://doi.org/' + w.doi : (w.oaId ? 'https://openalex.org/' + w.oaId : '');
     let c1 = (url ? lnk(url, w.title) : esc(w.title)).replace('<a ', '<a class="ttl" ') + `<div class="dim">${[w.year || 'год ?', p.typeName, w.doi ? 'DOI ' + lnk(url, w.doi) : 'DOI нет', w.source === 'OpenAlex' ? 'найдена в OpenAlex' : ''].filter(Boolean).join(' · ')}</div>`;
@@ -1117,9 +1435,19 @@ async function searchAuthor(S, input, st) {
 }
 async function runAuthor() {
   if (BUSY || !REF) return; BUSY = true; $('ago').disabled = true; applyNet(); W.auto = null; AU = newS();
+  $('outAuthor').innerHTML = ''; $('acopy').style.display = 'none'; updateNav(); goTo('astatus');  // прежний результат убирается сразу
   await searchAuthor(AU, $('author').value, t => { $('astatus').textContent = t; });
   if (W.entries) rejudge();
-  BUSY = false; $('ago').disabled = false; $('astatus').textContent = ''; renderAll();
+  BUSY = false; $('ago').disabled = false; $('astatus').textContent = ''; renderAll(); goTo('outAuthor');
+}
+/* Правка 4: перейти к следующему автору — поле и его результаты очищаются, список публикаций не трогается */
+function resetAuthor() {
+  if (BUSY) return;
+  AU = newS(); W.auto = null; FLT.au = FLT0();
+  $('author').value = ''; $('aparsed').textContent = ''; $('astatus').textContent = '';
+  $('outAuthor').innerHTML = ''; $('acopy').style.display = 'none';
+  if (W.entries) { rejudge(); renderList(); }
+  updateNav(); goTo('inp'); $('author').focus();
 }
 /* Поиск по ФИО. Возвращает автора, если он определён однозначно, иначе заполняет S.cands для выбора. */
 async function nameSearch(S, fios) {
@@ -1151,8 +1479,8 @@ async function findSimilar(S) {
   try { list = await searchAuthors(inf.name); } catch (e) { return; }
   S.similar = list.filter(a => S.prof.ids.indexOf(a.id) < 0 && fioOK(a.name, a.alt, fios) && (!a.orcid || !inf.orcid || a.orcid === inf.orcid)).slice(0, 6);
 }
-async function afterPick(k) { const S = stOf(k); if (S.prof && !S.prof.err) { await findSimilar(S); try { await fetchOrcidIds(S); } catch (e) { } } if (k < 0 && W.entries) rejudge(); BUSY = false; renderAll(); }
-async function addProfile(id, k) { k = k == null ? -1 : k; if (BUSY) return; BUSY = true; const S = stOf(k); const ids = S.prof.ids.concat([id]); await loadProfile(S, ids, S.prof.how + '; добавлен профиль ' + id); S.similar = (S.similar || []).filter(a => a.id !== id); if (k < 0 && W.entries) rejudge(); BUSY = false; renderAll(); }
+async function afterPick(k) { const S = stOf(k); if (S.prof && !S.prof.err) { await findSimilar(S); try { await fetchOrcidIds(S); } catch (e) { } } if (W.entries) rejudge(); BUSY = false; renderAll(); goTo('outAuthor'); }
+async function addProfile(id, k) { k = k == null ? -1 : k; if (BUSY) return; BUSY = true; const S = stOf(k); const ids = S.prof.ids.concat([id]); await loadProfile(S, ids, S.prof.how + '; добавлен профиль ' + id); S.similar = (S.similar || []).filter(a => a.id !== id); if (W.entries) rejudge(); BUSY = false; renderAll(); goTo('outAuthor'); }
 async function pickOrcid(orcid, k) { k = k == null ? -1 : k; if (BUSY) return; BUSY = true; const S = stOf(k); S.msgs = []; await byOrcid(S, orcid, 'выбран вручную: ORCID ' + orcid); await afterPick(k); }
 async function pickAuthor(id, k) { k = k == null ? -1 : k; if (BUSY) return; BUSY = true; const S = stOf(k); await loadProfile(S, [id], 'выбран вручную из найденных по имени'); await afterPick(k); }
 
@@ -1197,7 +1525,7 @@ function profileLinksHtml(S, k) {
   const L = profileLinks(S); if (!L.ids.length && !(S.prof && !S.prof.err)) return '';
   let h = `<div class="plinks"><b>Профили автора</b>`;
   if (L.warns.length) h += `<p>${chip('check', 'проверьте')} ${L.warns.map(esc).join('; ')}.</p>`;
-  if (L.ids.length) h += '<table class="t"><tr><th style="width:24%">База</th><th style="width:22%">Идентификатор</th><th style="width:18%">Откуда взят</th><th>Ссылка</th></tr>' + L.ids.map(x => { const B = BASES[x.b]; return `<tr><td>${esc(B.name)}</td><td>${esc(x.v)}</td><td class="dim">${esc(x.src.join(', '))}</td><td>${lnk(B.url(x.v))}${B.note ? ' <span class="dim">— ' + esc(B.note) + '</span>' : ''}</td></tr>`; }).join('') + '</table>';
+  if (L.ids.length) h += '<table class="t"><tr><th style="width:26%">База</th><th style="width:26%">Идентификатор</th><th>Ссылка</th></tr>' + L.ids.map(x => { const B = BASES[x.b]; return `<tr><td>${esc(B.name)}</td><td title="откуда взят: ${esc(x.src.join(', '))}">${esc(x.v)}</td><td>${lnk(B.url(x.v))}${B.note ? ' <span class="dim">— ' + esc(B.note) + '</span>' : ''}</td></tr>`; }).join('') + '</table>';
   if (L.orcErr) h += `<p class="dim" style="margin-bottom:0">Идентификаторы из записи ORCID не получены: ${esc(L.orcErr)}.</p>`;
   h += hirschHtml(S, k, L);
   return h + ` <p style="margin:6px 0 0"><button class="sec small" onclick="copyLinks(${k})">Скопировать ссылки</button></p></div>`;
@@ -1207,16 +1535,16 @@ function profileLinksHtml(S, k) {
 const H_BASES = [['scopus', 'Scopus', 'scopus'], ['wos', 'Web of Science', 'rid'], ['rinc', 'РИНЦ (eLibrary)', 'rinc']];
 const H_NOTE = { scopus: 'h-индекс виден в профиле и без подписки (рядом с числом документов)', wos: 'нужен доступ к Web of Science', rinc: '' };
 function hirschLink(L, idb) { const x = L.ids.find(i => i.b === idb); if (x) return { u: BASES[idb].url(x.v), t: 'профиль ' + x.v }; const s = L.sr.find(i => i.b === ({ scopus: 'Scopus', rid: 'Web of Science', rinc: 'eLibrary' })[idb]); return s ? { u: s.u, t: 'поиск автора', q: s.manual ? s.q : '' } : null; }
+/* Правка 5: индекс Хирша — одной компактной строкой вместо таблицы */
 function hirschHtml(S, k, L) {
   const prof = S.prof && !S.prof.err ? S.prof : null; if (!prof && !L.ids.length) return '';
-  let h = '<p style="margin:10px 0 4px"><b>Индекс Хирша</b></p><table class="t"><tr><th style="width:24%">База</th><th style="width:22%">Значение</th><th>Где посмотреть</th></tr>';
-  for (const [key, name, idb] of H_BASES) {
+  const parts = H_BASES.map(([key, name, idb]) => {
     const l = hirschLink(L, idb);
-    h += `<tr><td>${esc(name)}</td><td>${chip('unk', 'утилита не получает')}</td><td>${l ? lnk(l.u, l.t) + (l.q ? ' <span class="dim">(форма поиска — ввести «' + esc(l.q) + '»)</span>' : '') : '<span class="dim">идентификатора и имени нет</span>'}<div class="dim">откройте и посмотрите сами${H_NOTE[key] ? ' — ' + H_NOTE[key] : ''}</div></td></tr>`;
-  }
+    return `${esc(name)} — ` + (l ? lnk(l.u, l.q ? 'форма поиска' : 'посмотреть') + (H_NOTE[key] ? ` <span class="dim" title="${esc(H_NOTE[key])}">?</span>` : '') : '<span class="dim">профиля нет</span>');
+  });
   const oa = prof ? prof.info.filter(a => a.h != null) : [];
-  h += `<tr><td>OpenAlex</td><td>${oa.length ? oa.map(a => '<b>' + a.h + '</b>' + (oa.length > 1 ? ' <span class="dim">(' + esc(a.id) + ')</span>' : '')).join(', ') : chip('unk', 'нет данных')}</td><td>${prof ? prof.info.map(a => lnk('https://openalex.org/' + a.id, 'профиль ' + a.id)).join(', ') : ''}<div class="dim">свой расчёт OpenAlex по своей базе и с самоцитированием; с Scopus, WoS и РИНЦ не совпадает — для сверки не годится</div></td></tr></table>`;
-  return h;
+  parts.push(`OpenAlex ${oa.length ? '<b>' + oa.map(a => a.h).join(', ') + '</b>' : '<span class="dim">нет данных</span>'} <span class="dim" title="считается по базе OpenAlex и с самоцитированием — с Scopus, WoS и РИНЦ не совпадает">(свой расчёт)</span>`);
+  return `<div class="hline"><b>Индекс Хирша</b> <span class="dim" title="Scopus, WoS и РИНЦ открытых источников не дают — утилита значение не получает, откройте и посмотрите сами">(посмотрите сами)</span>: ${parts.join(' · ')}</div>`;
 }
 function copyLinks(k) {
   const S = stOf(k), L = profileLinks(S), out = [];
@@ -1224,7 +1552,7 @@ function copyLinks(k) {
   L.sr.forEach(x => out.push(tsvRow([x.b + ' — поиск по имени', x.q, '', x.u])));
   if (L.warns.length) out.push(tsvRow(['Проверьте', L.warns.join('; ')]));
   if (S.prof && !S.prof.err) S.prof.info.filter(a => a.h != null).forEach(a => out.push(tsvRow(['Индекс Хирша OpenAlex (свой расчёт)', a.h, a.id, 'https://openalex.org/' + a.id])));
-  toClip(out.join('\n'), k < 0 ? 'astatus' : 'gstatus');
+  toClip(out.join('\n'), 'astatus');
 }
 
 const wLink = w => w.doi ? 'https://doi.org/' + w.doi : (w.oaId ? 'https://openalex.org/' + w.oaId : '');
@@ -1238,12 +1566,12 @@ function authorBody(S, k, fid, withFilter) {
   if (prof && prof.err) h += `<p>${chip('unk', 'не загружено')} ${esc(prof.err)}</p>`;
   else if (prof) {
     h += `<p>${prof.info.map(a => `<b>${esc(a.name)}</b>${a.inst ? ', ' + esc(a.inst) : ''}${a.works != null ? ', работ в базе: ' + a.works : ''}${a.h != null ? ', индекс Хирша по OpenAlex: ' + a.h : ''}`).join('<br>')}</p>`;
-    h += `<p class="dim">Как найден: ${esc(prof.how)}.${prof.info.length > 1 ? ' В базе несколько профилей с этой фамилией — публикации собраны со всех; проверьте, что это один человек.' : ''} Профиль собран базой автоматически: возможны чужие статьи и пропуски. Индекс Хирша OpenAlex считается по своей базе и с самоцитированием — с WoS, Scopus и РИНЦ он не совпадает.</p>`;
+    h += `<p class="dim" title="Профиль собран базой автоматически: возможны чужие статьи и пропуски">Как найден: ${esc(prof.how)}.${prof.info.length > 1 ? ' Профилей несколько — публикации собраны со всех, проверьте, что это один человек.' : ''}</p>`;
     const all = prof.js, rows = profRows(S, fid), cnt = q => rows.filter(x => x.j.sj && x.jv.qY === q).length, wl1 = rows.filter(x => rowKey(x.w.year, x.j, x.jv).wl === 1).length, cy = rows.filter(x => x.corrSt === 'yes').length;
     h += `<p>Источник — ${prof.aw.source}. Статей и обзоров за все годы: <b>${all.length}</b>.` + (prof.aw.capped ? ' Показаны первые 2000 — список обрезан.' : '') + '</p>';
     if (k < 0 && W.entries) { const miss = W.pubs.filter(p => p.work && p.work.doi && TYPE_OK[p.work.type] && !all.some(x => x.w.doi === p.work.doi)); if (miss.length) h += `<p>${chip('check', 'проверьте')} В профиле автора нет ${miss.length} из найденных статей списка (№ ${miss.map(p => numOf(p.entry, W.pubs.indexOf(p))).join(', ')}): профиль в базе неполный либо это другой автор.</p>`; }
     if (withFilter) h += filterBar(fid, rows.length, all.length, noCpdHidden(all.map(profKey), FLT[fid]));
-    h += `<p>${withFilter ? 'Среди показанных' : 'По фильтру группы'} — по квартилю SCImago на год публикации: Q1 — <b>${cnt(1)}</b>, Q2 — <b>${cnt(2)}</b>, Q3 — ${cnt(3)}, Q4 — ${cnt(4)}, без квартиля или не в SCImago — ${rows.filter(x => !x.j.sj || !x.jv.qY).length}. 1 уровень Белого списка на год публикации: <b>${wl1}</b>. Автор — corresponding: <b>${cy}</b>.</p>`;
+    h += `<div class="sum" title="по показанным строкам; квартиль и уровень — на год публикации">${[['Q1', cnt(1)], ['Q2', cnt(2)], ['Q3', cnt(3)], ['Q4', cnt(4)], ['без квартиля', rows.filter(x => !x.j.sj || !x.jv.qY).length], ['БС 1', wl1], ['corresponding', cy]].map(([t, n]) => `<span class="sb"><b>${n}</b> ${t}</span>`).join('')}</div>`;
     const listed = new Set(W.entries ? W.pubs.filter(p => p.work).map(p => p.work.doi) : []), orgOn = !!$('org').value.trim();
     if (!all.length) h += '<p class="dim">Статей нет. Это не значит, что их нет вообще: профиль в базе может быть пустым.</p>';
     else if (!rows.length) h += '<p class="dim">Под фильтр не подходит ни одна статья.</p>';
@@ -1255,8 +1583,8 @@ function authorBody(S, k, fid, withFilter) {
     const c = S.cands || [], o = S.orcCands || [];
     if (c.length || o.length) {
       h += `<p>${chip('check', 'выберите')} По ФИО однозначно определить автора нельзя — выберите нужного. Сверху — лучше совпавшие: имя полностью, инициал отчества, запись в реестре ORCID.</p>`;
-      if (c.length) h += `<table class="t cands"><tr><th style="width:19%">Имя</th><th style="width:23%">Организация</th><th style="width:20%">Основные темы<div class="sub">OpenAlex</div></th><th style="width:6%">Работ</th><th style="width:6%">Хирш<div class="sub">OpenAlex</div></th><th style="width:11%">Совпадения</th><th style="width:15%"></th></tr>` + c.map(a => { const cyr = (a.alt || []).filter(isCyr).sort((x, y) => y.length - x.length)[0];
-        return `<tr><td><b>${esc(a.name)}</b><div>${cyr ? esc(cyr) : '<span class="dim">имени кириллицей в базе нет</span>'}</div></td><td>${a.inst ? esc(a.inst) + '<div>' + (a.instRu ? esc(a.instRu) : '<span class="dim">русского названия в базе нет</span>') + '</div>' : '<span class="dim">не указана</span>'}</td><td>${(a.topics || []).length ? a.topics.map(t => `<span class="topic">${esc(t)}</span>`).join('') : '<span class="dim">нет данных</span>'}</td><td>${a.works}</td><td>${a.h != null ? a.h : ''}</td><td>${[a.fullGiven && nchip('имя'), a.patr && nchip('отчество'), a.inOrcid && nchip('в ORCID'), a.ru && nchip('Россия')].filter(Boolean).join(' ')}</td><td><button class="sec" onclick="pickAuthor('${a.id}'${kk})">Это он</button><div class="dim">${candLinks(a)}</div></td></tr>`; }).join('') + '</table>';
+      if (c.length) h += `<table class="t cands"><tr><th style="width:19%">Имя</th><th style="width:23%">Организация</th><th style="width:20%">Разделы науки<div class="sub">OpenAlex, наведите — тема</div></th><th style="width:6%">Работ</th><th style="width:6%">Хирш<div class="sub">OpenAlex</div></th><th style="width:11%">Совпадения</th><th style="width:15%"></th></tr>` + c.map(a => { const cyr = (a.alt || []).filter(isCyr).sort((x, y) => y.length - x.length)[0];
+        return `<tr><td><b>${esc(a.name)}</b><div>${cyr ? esc(cyr) : '<span class="dim">имени кириллицей в базе нет</span>'}</div></td><td>${a.inst ? esc(a.inst) + '<div>' + (a.instRu ? esc(a.instRu) : '<span class="dim">русского названия в базе нет</span>') + '</div>' : '<span class="dim">не указана</span>'}</td><td>${topicsHtml(a)}</td><td>${a.works}</td><td>${a.h != null ? a.h : ''}</td><td>${[a.fullGiven && nchip('имя'), a.patr && nchip('отчество'), a.inOrcid && nchip('в ORCID'), a.ru && nchip('Россия')].filter(Boolean).join(' ')}</td><td><button class="sec" onclick="pickAuthor('${a.id}'${kk})">Это он</button><div class="dim">${candLinks(a)}</div></td></tr>`; }).join('') + '</table>';
       if (o.length) h += `<p class="dim">Найдены в реестре ORCID (в OpenAlex по имени не нашлись):</p><table class="t"><tr><th>Имя в ORCID</th><th style="width:36%">Организации</th><th style="width:18%">ORCID</th><th style="width:15%"></th></tr>` + o.map(a => `<tr><td>${esc(a.name)}</td><td>${esc(a.inst)}</td><td>${lnk('https://orcid.org/' + a.orcid, a.orcid)}</td><td><button class="sec" onclick="pickOrcid('${a.orcid}'${kk})">Это он</button><div class="dim">${lnk(scopusNameUrl(a.name), 'Scopus: поиск по имени')}</div></td></tr>`).join('') + '</table>';
       h += '<p class="dim">Надёжнее всего — ORCID или поиск по статьям из списка: тогда автор определяется без выбора.</p>';
     } else h += `<p>${chip('unk', 'не найден')} По этим сведениям автор в открытых базах не найден. Попробуйте ORCID или сначала найдите публикации из списка.</p>`;
@@ -1267,53 +1595,8 @@ function authorBody(S, k, fid, withFilter) {
 function renderAuthor() {
   const S = AU;
   if (!S.prof && !S.cands && !S.orcCands && !S.msgs.length && !S.parsed) { $('outAuthor').innerHTML = ''; $('acopy').style.display = 'none'; return; }
-  $('outAuthor').innerHTML = '<h2>Автор</h2>' + authorBody(S, -1, 'au', true).replace('<p>Источник —', '<h2>Все публикации автора</h2><p>Источник —');
+  $('outAuthor').innerHTML = '<h2>Автор</h2>' + authorBody(S, -1, 'au', true).replace('<p>Источник —', '<h2 id="auWorks">Все публикации автора</h2><p>Источник —');
   $('acopy').style.display = S.prof && !S.prof.err ? '' : 'none';
-}
-
-/* ----- Режим 3: несколько авторов ----- */
-const grpLines = () => $('grp').value.split('\n').map(l => l.replace(/^\s*\d{1,2}\s*[.)]\s*/, '').replace(/\s*\|\s*/g, ' ').trim()).filter(l => l.length >= 3).slice(0, 30);
-function countGroup() { const n = grpLines().length; $('gcnt').textContent = n ? `Авторов: ${n}${n >= 30 ? ' (не больше 30 за раз)' : ''}.` : ''; }
-async function groupImage(files) {
-  if (!files.length || BUSY) return; BUSY = true;
-  try { $('gstatus').textContent = 'Распознаю снимок…'; const r = await ocrImage(files[0]); $('grp').value = ($('grp').value.trim() ? $('grp').value.trim() + '\n' : '') + r.text.trim() + '\n'; $('gstatus').innerHTML = '<b>Сверьте текст со снимком</b>: оставьте по одному автору на строку (ФИО и, если есть, идентификаторы), лишнее удалите.'; }
-  catch (e) { $('gstatus').textContent = 'Снимок не распознан: ' + (e.message || e); }
-  BUSY = false; countGroup();
-}
-async function runGroup() {
-  if (BUSY || !REF) return; const lines = grpLines(); if (!lines.length) { $('gstatus').textContent = 'Введите авторов — по одному на строку.'; return; }
-  BUSY = true; $('ggo').disabled = true; applyNet(); G.items = lines.map(input => ({ input, S: newS() }));
-  for (let k = 0; k < G.items.length; k++) { const it = G.items[k]; await searchAuthor(it.S, it.input, t => { $('gstatus').textContent = `Автор ${k + 1} из ${G.items.length}: ${t}`; }); renderGroup(); await sleep(NET.pause); }
-  BUSY = false; $('ggo').disabled = false; $('gstatus').textContent = 'Готово.'; renderGroup();
-}
-function grpState(S) { if (S.prof && !S.prof.err) return 'found'; if (S.prof && S.prof.err) return 'err'; if ((S.cands && S.cands.length) || (S.orcCands && S.orcCands.length)) return 'pick'; return 'none'; }
-function renderGroup() {
-  if (!G.items.length) { $('outGroup').innerHTML = ''; $('gcopy').style.display = 'none'; return; }
-  const f = FLT.grp, all = [];
-  G.items.forEach(it => { if (grpState(it.S) === 'found') it.S.prof.js.forEach(x => all.push(profKey(x))); });
-  let h = `<h2>Несколько авторов (${G.items.length})</h2>` + filterBar('grp', all.filter(k => passFilter(k, f)).length, all.length, noCpdHidden(all, f)).replace('Показано', 'Публикаций всех авторов: показано');
-  h += '<table class="t"><tr><th style="width:3%">№</th><th style="width:19%">Введено</th><th style="width:20%">Найден</th><th style="width:7%">Публикаций</th><th style="width:5%">Q1</th><th style="width:5%">Q2</th><th style="width:6%">БС 1</th><th style="width:9%">Corresponding</th><th>Что проверить</th></tr>';
-  G.items.forEach((it, k) => {
-    const S = it.S, st = grpState(S); let found = '', nums = '<td colspan="5" class="dim">—</td>', chk = [];
-    if (st === 'found') {
-      const rows = profRows(S, 'grp'), inf = S.prof.info[0] || {};
-      found = `<a href="#g${k}">${esc(inf.name)}</a>${inf.inst ? '<br><span class="dim">' + esc(inf.inst) + '</span>' : ''}`;
-      nums = `<td><b>${rows.length}</b></td><td>${rows.filter(x => x.j.sj && x.jv.qY === 1).length}</td><td>${rows.filter(x => x.j.sj && x.jv.qY === 2).length}</td><td>${rows.filter(x => rowKey(x.w.year, x.j, x.jv).wl === 1).length}</td><td>${rows.filter(x => x.corrSt === 'yes').length}</td>`;
-      if (S.prof.info.length > 1) chk.push('собрано из нескольких профилей');
-      if (S.similar && S.similar.length) chk.push('есть похожие профили');
-      if (profileLinks(S).warns.length) chk.push('идентификаторы расходятся');
-      if (!/ORCID|Scopus ID|ResearcherID/.test(S.prof.how)) chk.push('найден по ФИО — проверьте, тот ли человек');
-    } else if (st === 'pick') { found = chip('check', 'выберите из кандидатов') + ` <a href="#g${k}">ниже</a>`; }
-    else if (st === 'err') { found = chip('unk', 'не загружено'); }
-    else found = chip('unk', 'не найден');
-    chk = chk.concat(S.msgs);
-    h += `<tr><td>${k + 1}</td><td>${esc(it.input)}</td><td>${found}</td>${nums}<td class="dim">${chk.map(esc).join('; ')}</td></tr>`;
-  });
-  h += `</table><p class="dim">Число публикаций, Q1, Q2, БС 1 и corresponding — по фильтру выше (по умолчанию — все годы). Квартиль и уровень — на год публикации.</p>`;
-  G.items.forEach((it, k) => { const inf = it.S.prof && !it.S.prof.err ? it.S.prof.info[0] : null; h += `<details id="g${k}" class="gitem"><summary>${k + 1}. ${esc(inf ? inf.name : it.input)}</summary>${authorBody(it.S, k, 'grp', false)}</details>`; });
-  const open = [...document.querySelectorAll('#outGroup details[open]')].map(d => d.id);
-  $('outGroup').innerHTML = h; open.forEach(id => { const d = $(id); if (d) d.open = true; });
-  $('gcopy').style.display = '';
 }
 
 /* ----- Копирование ----- */
@@ -1333,11 +1616,6 @@ function copyAuthor() {
   if (!AU.prof || AU.prof.err) return; const L = [tsvRow(['Автор', AU.prof.info.map(a => a.name).join('; '), AU.prof.info.map(a => 'https://openalex.org/' + a.id).join(' ')]), tsvRow(profHead())];
   aRows().forEach(x => L.push(tsvRow(profLine(x))));
   toClip(L.join('\n'), 'astatus');
-}
-function copyGroup() {
-  const L = [tsvRow(['№', 'Введено', 'Автор', 'Профиль OpenAlex'].concat(profHead()))];
-  G.items.forEach((it, k) => { const S = it.S; if (grpState(S) !== 'found') { L.push(tsvRow([k + 1, it.input, grpState(S) === 'pick' ? 'выберите из кандидатов' : 'не найден'])); return; } const inf = S.prof.info[0] || {}; profRows(S, 'grp').forEach(x => L.push(tsvRow([k + 1, it.input, inf.name, 'https://openalex.org/' + inf.id].concat(profLine(x))))); });
-  toClip(L.join('\n'), 'gstatus');
 }
 function toClip(t, where) {
   const done = () => { $(where).textContent = 'Скопировано — вставьте в таблицу.'; };

@@ -1,7 +1,14 @@
 /* ===== Проверка публикаций: правила (без сети, без ИИ) ===== */
-const VERSION = '0.7.9', VERSION_DATE = '15.10.2026';
+const VERSION = '0.7.10', VERSION_DATE = '16.10.2026';
 /* Что нового — показывается на странице */
 const CHANGES = [
+  ['0.7.10', '16.10.2026', ['После «Найти публикации», «Найти автора» и выбора варианта страница сама переходит к результату; под шапкой — строка переходов со счётчиками, внизу справа — кнопка «К вводу».',
+    'Основные темы автора показываются по-русски (раздел науки OpenAlex); точное английское название — в подсказке при наведении.',
+    'Кнопка «Найти другого автора»: очищает поле и прежний результат, не трогая список публикаций.',
+    'Раздел «Несколько авторов» убран — остались список публикаций и автор.',
+    'Меньше текста и рамок: короткие подсказки, «Организация для сверки» — в «Дополнительно», индекс Хирша — одной строкой, сводка по квартилям — плашками.',
+    'Снимок страницы с сайта (ORCID, Google Scholar, Scopus, eLibrary, Web of Science и других): элементы интерфейса — пагинация, кнопки, «Cited by», баннеры — больше не попадают в текст записи и не портят поиск.',
+    'Оформление приведено к брендбуку: шрифт Verdana (замена Circe), прямые углы без скруглений, красный — только в крупных заголовках.']],
   ['0.7.9', '15.10.2026', ['Справочник SCImago — за 2006–2025 годы (был 2021–2025): квартиль и показатель на год публикации и для старых статей. Белого списка до 2023 года не было — у таких статей уровень 2023 года показан справочно.',
     'Поиск статей по списку: лучший вариант выбирается по названию, году, изданию и первому автору (из 10 вариантов вместо 4); если Crossref не нашёл — запасной поиск в OpenAlex; DOI узнаётся и с ошибками распознавания («1O.1016», пробелы); если DOI из списка не найден — поиск по тексту. Для спорных и ненайденных статей — до 3 ближайших вариантов с кнопкой «Это она» и ссылки на поиск в Google Scholar и eLibrary.',
     'Колонка «Показатель» переименована в «Импакт-фактор» (это по-прежнему «цитирований на документ за 2 года» SCImago — подпись под заголовком).',
@@ -95,8 +102,115 @@ function findJournal(issns, title) {
 /* ---------- разбор списка из заявки ---------- */
 const DOI_RE = /\b10\.\d{4,9}\/[^\s"<>]+/i;
 function cleanDoi(d) { return d.replace(/[.,;)\]]+$/, '').toLowerCase(); }
+
+/* ---------- снимок страницы сайта: отделяем текст публикаций от элементов интерфейса ----------
+   Снимок списка публикаций с любого сайта даёт вперемешку с текстом статей пагинацию, кнопки, счётчики и баннеры.
+   Правила — только регулярные выражения (ИИ не используется): непонятное не выбрасывается, а остаётся в записи. */
+const UI_RE = [
+  /^(page|страница)\s*\d+\s*(of|из)\s*\d+$/i, /^\d+\s*[-–—]\s*\d+\s+of\s+[\d\s,]+$/i, /^\d+\s+of\s+[\d\s,]+$/i,
+  /^(items|rows|results|documents)\s+per\s+page\b/i, /^показывать\s+по\b/i, /^(next|previous|prev|first|last|назад|далее|вперёд|вперед|ещё|еще)$/i,
+  /^[‹›«»<>→←⟩⟨|·•]+$/, /^\.{3}$/, /^…$/,
+  /^(sort\s+by|sorted\s+by|сортировать\s+по|сортировка|date\s+range|диапазон\s+дат|results\s+per\s+page|refine\s+by)\b/i, /^(sort|filter|filters|фильтр|фильтры|уточнить)\s*:?$/i,
+  /^(show\s+more(\s+detail)?|read\s+more|view\s+all|view\s+abstract|load\s+more|export(\s+all)?|download|share|print|copy|save|add\s+to\s+(library|list)|select\s+all|create\s+citation\s+report|analyze\s+results)\b[.:\s]*$/i,
+  /^(подробнее|показать\s+ещё|показать\s+еще|скачать|поделиться|экспорт|печать|выбрать\s+все|сохранить|добавить\s+в\s+список|в\s+избранное)\b[.:\s]*$/i,
+  /^(cited\s+by|times\s+cited|цитировано|цитируется|цитирований|число\s+цитирований)\s*[:\s]*[\d\s,]*$/i,
+  /^(цитировать|похожие\s+статьи|все\s+версии\s+статьи(\s*\(\d+\))?|related\s+articles|all\s+\d+\s+versions|cite)$/i,
+  /^(похожие\s+запросы|related\s+searches)$/i,
+  /^(source|источник)\s*:/i, /^preferred\s+source(\s*\(of\s*\d+\))?/i,
+  /^(cookie|cookies|accept(\s+all)?|sign\s+in|log\s+in|войти|регистрация|подписаться|принять)\b/i,
+  /^(общее\s+число\s+публикаций|число\s+публикаций|индекс\s+хирша)\s*[:\s]*[\d\s,]*$/i,
+  /^(название|соавторы|журнал|год|тип\s+публикации|документы|documents|authors|title|year|source\s+title)$/i,
+];
+/* Связка кнопок в одной строке («Export all Download Select all», «☆ Сохранить 99 Цитировать Цитировано: 12 Похожие статьи»):
+   если после удаления кнопочных слов, чисел и значков почти ничего не осталось — это элемент интерфейса, а не текст статьи */
+const BTN_WORDS = /(show\s+more(\s+detail)?|read\s+more|view\s+all|view\s+abstract|load\s+more|export(\s+all)?|download|share|print|copy|save|add\s+to\s+(library|list)|select\s+all|full\s+text|get\s+pdf|pdf|html|cited\s+by|times\s+cited|cite|related\s+articles|all\s+versions|versions?\s+of\s+this\s+article|подробнее|показать\s+(ещё|еще)|скачать|поделиться|экспорт|печать|выбрать\s+все|сохранить|цитировать|цитировано|цитирований|похожие\s+статьи|все\s+версии\s+статьи|похожие\s+запросы|полный\s+текст|назад|далее)/gi;
+function isBtnRow(t) {
+  const rest = String(t).replace(BTN_WORDS, ' ').replace(/[\d\s:;()\[\]☆★✓·•|,.\-–—]+/g, ' ').trim();
+  return rest.length <= 3;
+}
+/* Строка «интерфейсная», если совпала с правилом или если она короткая, без признаков названия статьи и повторяется в тексте */
+function isUiLine(l, repeats) {
+  const t = String(l || '').trim(); if (!t) return false;
+  if (DOI_RE.test(t) || findDoi(t)) return false;
+  if (UI_RE.some(re => re.test(t))) return true;
+  if (BTN_WORDS.test(t.toLowerCase()) && isBtnRow(t)) { BTN_WORDS.lastIndex = 0; return true; }
+  BTN_WORDS.lastIndex = 0;
+  const words = t.split(/\s+/);
+  if (words.length <= 3 && !/\b(19[5-9]\d|20[0-4]\d)\b/.test(t)) {
+    const long = words.filter(w => w.replace(/[^A-Za-zА-Яа-яЁё]/g, '').length >= 4).length;
+    if (!long) return true;                                          // «‹ 2 ›», «PDF», «1 of 5»
+    if (repeats && repeats.get(t.toLowerCase()) >= 3) return true;   // один и тот же текст в нескольких местах — кнопка, а не статья
+  }
+  return false;
+}
+/* Признаки конкретных сайтов. Список расширяемый: если признаков нет, работает общая разбивка. */
+function detectSite(text) {
+  const t = String(text || '');
+  if (/CONTRIBUTORS\s*:/i.test(t) && /(Source\s*:|Preferred\s+source)/i.test(t)) return 'orcid';
+  if (/(Цитировать|Все\s+версии\s+статьи|versions\s+of\s+this\s+article|Cited\s+by\s+\d+)/i.test(t) && /^.+\s[—–-]\s.*(19|20)\d{2}\s*[—–-]\s*\S+/m.test(t)) return 'scholar';
+  if (/(Общее\s+число\s+публикаций|Число\s+цитирований|elibrary|РИНЦ)/i.test(t) && /(Соавторы|Журнал)/i.test(t)) return 'elibrary';
+  if (/^By\s*:/im.test(t) && /(Times\s+Cited|Create\s+Citation\s+Report)/i.test(t)) return 'wos';
+  if (/(View\s+abstract|Cited\s+by|Documents)/i.test(t) && /\d+\s*[-–—]\s*\d+\s+of\s+[\d\s,]+/i.test(t)) return 'scopus';
+  return null;
+}
+/* Разбивка по карточкам конкретного сайта. Возвращает массив блоков строк или null, если признаки не подтвердились. */
+function splitBySite(lines, site) {
+  const L = lines.filter(Boolean), blocks = []; let cur = null;
+  const push = () => { if (cur && cur.length) blocks.push(cur); cur = null; };
+  if (site === 'orcid') {
+    // карточка ORCID «Works»: заголовок, под ним «ГГГГ[-ММ] | Тип» или «Журнал / ГГГГ[-ММ] | Тип»
+    const meta = /^(?:.+\/\s*)?(19|20)\d{2}(-\d{2})?\s*\|\s*\S+/;
+    for (let i = 0; i < L.length; i++) {
+      if (meta.test(L[i]) && i > 0) { const head = cur && cur.length ? cur.pop() : L[i - 1]; push(); cur = [head, L[i]]; continue; }
+      if (!cur) cur = []; cur.push(L[i]);
+    }
+    push();
+    return blocks.filter(b => b.length >= 2);
+  }
+  if (site === 'scholar') {
+    // карточка Google Scholar: заголовок, строка «Авторы — Журнал, год — сайт», сниппет (с «…»), подвал
+    const auth = /^.+\s[—–-]\s.*(19|20)\d{2}/;
+    for (let i = 0; i < L.length; i++) {
+      if (auth.test(L[i]) && i > 0) { const head = cur && cur.length ? cur.pop() : L[i - 1]; push(); cur = [head, L[i]]; continue; }
+      if (!cur) continue;                                       // до первой карточки — шапка страницы
+      if (/^[….]/.test(L[i])) continue;                         // сниппет в запись не входит
+      cur.push(L[i]);
+    }
+    push();
+    return blocks.filter(b => b.length >= 2);
+  }
+  if (site === 'scopus' || site === 'wos' || site === 'elibrary') {
+    // карточка: заголовок, затем авторы и издание; строка с годом закрывает карточку
+    const yr = /\b(19[5-9]\d|20[0-4]\d)\b/;
+    for (let i = 0; i < L.length; i++) {
+      if (!cur) { cur = [L[i]]; if (yr.test(L[i]) && L[i].split(/\s+/).length > 6) push(); continue; }
+      cur.push(L[i]);
+      if (yr.test(L[i])) push();
+    }
+    push();
+    return blocks.filter(b => b.join(' ').length >= 25);
+  }
+  return null;
+}
+/* Текст снимка с известного сайта → записи. null, если сайт не узнан. */
+function splitSiteEntries(text) {
+  let lines = String(text || '').replace(/\r/g, '').split('\n').map(l => l.replace(/\s+/g, ' ').trim());
+  const site = detectSite(lines.join('\n'));
+  if (!site) return null;
+  const rel = lines.findIndex(l => /^(похожие\s+запросы|related\s+searches)$/i.test(l));
+  if (rel >= 0) lines = lines.slice(0, rel);                    // блок подсказок в конце страницы — целиком
+  const repeats = new Map(); lines.forEach(l => { const k = l.toLowerCase(); if (k) repeats.set(k, (repeats.get(k) || 0) + 1); });
+  lines = lines.filter(l => !isUiLine(l, repeats));
+  const blocks = splitBySite(lines, site);
+  if (!blocks || !blocks.length) return null;
+  const out = blocks.map(b => parseEntry(b.join('\n'))).filter(e => e.query.length >= 12);
+  if (!out.length) return null;
+  out.forEach(e => { e.site = site; });
+  return out;
+}
 /* Делит вставленный или распознанный текст на отдельные публикации */
 function splitEntries(text) {
+  const site = splitSiteEntries(text); if (site) return site;
   const lines = String(text || '').replace(/\r/g, '').split('\n').map(l => l.replace(/[ \t ]+/g, ' ').trim());
   const numRe = /^(\d{1,2})\s*[.)]\s*(?=\S)/;
   const nums = lines.map(l => { const m = l.match(numRe); return m ? +m[1] : null; });
@@ -448,4 +562,4 @@ function judgeProfileWork(w, ids) { const r = judgeProfileWork0(w);
 const instNames = me => !me ? [] : ((me.inst && me.inst.length) ? me.inst.map(x => x.name) : (me.raw || []));
 function judgeProfileWork0(w) { const j = findJournal(w.issns, w.journal); const jv = journalVerdict(j, w.year, null, null); return { w, j, jv }; }
 
-if (typeof module !== 'undefined') module.exports = { instNames, CHANGES, corrOf, orgMatch, orgTokens, findDuplicates, isPreprint, VERSION, ST, ST_NAME, norm, normIssn, lev, loadRef, findJournal, splitEntries, parseEntry, titleScore, canonName, leaderVariants, sameSurname, authorPosition, journalVerdict, sjAt, detectLeader, parseAuthorInput, orcidValid, wlAt, passFilter, parseFIO, nameMatch, translitVariants, judgePub, judgeProfileWork, matchScore, findDoi, FOUND_OK, FOUND_NEAR, cleanDoi, fmtNum, fmtIssn };
+if (typeof module !== 'undefined') module.exports = { splitSiteEntries, detectSite, isUiLine, instNames, CHANGES, corrOf, orgMatch, orgTokens, findDuplicates, isPreprint, VERSION, ST, ST_NAME, norm, normIssn, lev, loadRef, findJournal, splitEntries, parseEntry, titleScore, canonName, leaderVariants, sameSurname, authorPosition, journalVerdict, sjAt, detectLeader, parseAuthorInput, orcidValid, wlAt, passFilter, parseFIO, nameMatch, translitVariants, judgePub, judgeProfileWork, matchScore, findDoi, FOUND_OK, FOUND_NEAR, cleanDoi, fmtNum, fmtIssn };
