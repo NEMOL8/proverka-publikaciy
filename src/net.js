@@ -8,7 +8,30 @@ async function tfetch(url, opts, ms) {
   const to = new Promise((_, bad) => { timer = setTimeout(() => { if (ac) ac.abort(); const e = new Error('нет ответа за ' + Math.round(ms / 1000) + ' с'); e.timeout = true; bad(e); }, ms); });
   try { return await Promise.race([f(url, Object.assign({}, opts || {}, ac ? { signal: ac.signal } : {})), to]); } finally { clearTimeout(timer); }
 }
+/* ----- Кеш ответов Crossref и OpenAlex в браузере (IndexedDB), с датой (удобство 2, 0.7.11).
+   Повторная проверка того же списка — мгновенная, дневной лимит OpenAlex не тратится. Ключ — адрес запроса без ключа OpenAlex. ----- */
+const CACHE = { on: false, days: 14, db: null, hits: 0, miss: 0, oldest: 0 };
+const cacheKey = url => String(url).replace(/[&?]api_key=[^&]*/, '');
+const cacheable = url => !NET.noCache && CACHE.on && (url.startsWith(NET.crossref) || url.startsWith(NET.openalex));
+function cacheDb() {
+  if (CACHE.db) return CACHE.db;
+  CACHE.db = new Promise(ok => { try { const r = indexedDB.open('pc_cache', 1); r.onupgradeneeded = () => r.result.createObjectStore('r'); r.onsuccess = () => ok(r.result); r.onerror = () => ok(null); } catch (e) { ok(null); } });
+  return CACHE.db;
+}
+async function cacheGet(url) {
+  const db = await cacheDb(); if (!db) return null;
+  return new Promise(ok => { try { const q = db.transaction('r').objectStore('r').get(cacheKey(url)); q.onsuccess = () => { const v = q.result; ok(v && Date.now() - v.t < CACHE.days * 864e5 ? v : null); }; q.onerror = () => ok(null); } catch (e) { ok(null); } });
+}
+async function cachePut(url, v) { const db = await cacheDb(); if (!db) return; try { db.transaction('r', 'readwrite').objectStore('r').put({ t: Date.now(), v }, cacheKey(url)); } catch (e) { } }
+async function cacheClear() { const db = await cacheDb(); if (!db) return; await new Promise(ok => { try { const tx = db.transaction('r', 'readwrite'); tx.objectStore('r').clear(); tx.oncomplete = ok; tx.onerror = ok; } catch (e) { ok(); } }); }
+async function cacheCount() { const db = await cacheDb(); if (!db) return 0; return new Promise(ok => { try { const q = db.transaction('r').objectStore('r').count(); q.onsuccess = () => ok(q.result); q.onerror = () => ok(0); } catch (e) { ok(0); } }); }
 async function getJson(url, tries, ms) {
+  if (cacheable(url)) { const c = await cacheGet(url); if (c) { CACHE.hits++; if (!CACHE.oldest || c.t < CACHE.oldest) CACHE.oldest = c.t; NET.log.push({ url, cache: c.t }); return c.v; } CACHE.miss++; }
+  const v = await getJson0(url, tries, ms);
+  if (cacheable(url)) cachePut(url, v);
+  return v;
+}
+async function getJson0(url, tries, ms) {
   tries = tries || 2;
   for (let k = 0; k < tries; k++) {
     let res;
@@ -238,4 +261,4 @@ async function runSelfCheck(onStep) {
   }
   return out;
 }
-if (typeof module !== 'undefined') module.exports = { instRu, oaWork, oaSearchWorks, tfetch, PING_MS, oaShip, orcidExternalIds, NET, getJson, crWork, findWork, enrichOA, enrichWL, authorInfo, searchAuthors, authorByOrcid, authorByScopus, orcidSearch, runSelfCheck, SELF, authorWorks, cleanOrcid, pingAll };
+if (typeof module !== 'undefined') module.exports = { CACHE, cacheKey, instRu, oaWork, oaSearchWorks, tfetch, PING_MS, oaShip, orcidExternalIds, NET, getJson, crWork, findWork, enrichOA, enrichWL, authorInfo, searchAuthors, authorByOrcid, authorByScopus, orcidSearch, runSelfCheck, SELF, authorWorks, cleanOrcid, pingAll };

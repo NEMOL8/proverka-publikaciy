@@ -4,3 +4,6 @@ openalex_key.txt
 orcid_token.txt
 evals/*.png
 evals/*.txt
+evals/*.jpg
+evals/*.xlsx
+evals/*.csv

@@ -30,12 +30,63 @@ async function readBoth(w, cv, psm) {
   for (const l of ['eng', 'rus']) { await w[l].setParameters({ tessedit_pageseg_mode: psm }); const { data } = await w[l].recognize(cv); out.push({ text: data.text, conf: data.confidence }); }
   return out[1].conf > out[0].conf + 2 ? out[1] : out[0];
 }
-/* Снимок увеличивается до ширины не меньше 2400 точек: мелкий текст иначе не читается */
-async function toCanvas(blob) {
+/* Страница целиком: каждая строка читается обеими моделями и берётся лучшая — на одной странице бывают
+   и русские, и английские записи (eLibrary), а модель для всей страницы одна портила половину строк (0.7.11).
+   Абзацы — по английскому прочтению: пустая строка между ними сохраняется (по ней делится список без номеров). */
+async function readLines(w, cv, psm) {
+  const res = {};
+  for (const l of ['eng', 'rus']) { await w[l].setParameters({ tessedit_pageseg_mode: psm }); const { data } = await w[l].recognize(cv, {}, { text: true, blocks: true }); res[l] = data; }
+  const paras = d => (d.blocks || []).flatMap(b => b.paragraphs || []);
+  const E = paras(res.eng), R = (res.rus.lines || []);
+  if (!E.length || !R.length) return res.rus.confidence > res.eng.confidence + 2 ? { text: res.rus.text, conf: res.rus.confidence } : { text: res.eng.text, conf: res.eng.confidence };
+  const ov = (a, b) => Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0)) / Math.max(1, Math.min(a.y1 - a.y0, b.y1 - b.y0));
+  const val = ln => (ln.confidence || 0) * (0.5 + 0.5 * ocrQuality(ln.text).ratio);
+  const used = new Set(), out = []; let cs = 0, cn = 0;
+  for (const p of E) {
+    const lines = [];
+    for (const le of p.lines || []) {
+      let best = null, bo = 0.5; R.forEach((lr, k) => { const o = ov(le.bbox, lr.bbox); if (o > bo && !used.has(k)) { bo = o; best = k; } });
+      let pick = le; if (best != null) { used.add(best); if (val(R[best]) > val(le)) pick = R[best]; }
+      const t = pick.text.replace(/\s+$/, ''); if (t.trim()) { lines.push(t); cs += pick.confidence || 0; cn++; }
+    }
+    if (lines.length) out.push(lines.join('\n'));
+  }
+  return { text: out.join('\n\n'), conf: cn ? cs / cn : 0 };
+}
+/* Снимок увеличивается до ширины не меньше 2400 точек: мелкий текст иначе не читается.
+   Затем предобработка (правка 4, 0.7.11): серый по минимуму каналов, растяжение контраста, повышение резкости, чёрно-белое по Otsu. */
+async function toCanvas(blob, raw) {
   const bmp = await createImageBitmap(blob); const k = Math.min(4, Math.max(1, 2400 / bmp.width));
   const cv = document.createElement('canvas'); cv.width = Math.round(bmp.width * k); cv.height = Math.round(bmp.height * k);
   const cx = cv.getContext('2d', { willReadFrequently: true }); cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height); cx.imageSmoothingQuality = 'high'; cx.drawImage(bmp, 0, 0, cv.width, cv.height);
-  return { cv, cx, small: bmp.width < 900 };
+  if (!raw) preprocess(cx, cv.width, cv.height);
+  return { cv, cx, small: bmp.width < 1200, width: bmp.width };
+}
+/* Синий и фиолетовый текст ссылок на светло-сером фоне (eLibrary) по яркости получается серым и тонет в фоне;
+   по минимуму каналов (min(R,G,B)) он становится почти чёрным, а светлый фон остаётся светлым. */
+function preprocess(cx, W, H) {
+  const img = cx.getImageData(0, 0, W, H), d = img.data, n = W * H, g = new Float32Array(n);
+  for (let i = 0, j = 0; i < n; i++, j += 4) g[i] = Math.min(d[j], d[j + 1], d[j + 2]);
+  // растяжение контраста: 1 % самых тёмных — чёрное, 1 % самых светлых — белое
+  const hist = new Uint32Array(256); for (let i = 0; i < n; i++) hist[g[i] | 0]++;
+  let lo = 0, hi = 255, acc = 0; for (; lo < 255; lo++) { acc += hist[lo]; if (acc > n * 0.01) break; } acc = 0; for (; hi > 0; hi--) { acc += hist[hi]; if (acc > n * 0.01) break; }
+  if (hi - lo > 20) { const s = 255 / (hi - lo); for (let i = 0; i < n; i++) g[i] = Math.max(0, Math.min(255, (g[i] - lo) * s)); }
+  // резкость: изображение + 0,8 × (изображение − размытое 5×5)
+  const b = boxBlur(g, W, H, 2), out = new Uint8ClampedArray(n); for (let i = 0; i < n; i++) out[i] = g[i] + 0.8 * (g[i] - b[i]);
+  // порог Otsu
+  hist.fill(0); for (let i = 0; i < n; i++) hist[out[i]]++;
+  let sum = 0; for (let t = 0; t < 256; t++) sum += t * hist[t];
+  let sB = 0, wB = 0, best = 0, th = 128; for (let t = 0; t < 256; t++) { wB += hist[t]; if (!wB) continue; const wF = n - wB; if (!wF) break; sB += t * hist[t]; const mB = sB / wB, mF = (sum - sB) / wF, v = wB * wF * (mB - mF) * (mB - mF); if (v > best) { best = v; th = t; } }
+  // светлый текст на тёмном фоне — инвертировать: распознавателю нужен тёмный текст на светлом
+  let dark = 0; for (let i = 0; i < n; i++) if (out[i] <= th) dark++; const inv = dark > n * 0.5;
+  for (let i = 0, j = 0; i < n; i++, j += 4) { let v = out[i] <= th ? 0 : 255; if (inv) v = 255 - v; d[j] = d[j + 1] = d[j + 2] = v; d[j + 3] = 255; }
+  cx.putImageData(img, 0, 0);
+}
+function boxBlur(src, W, H, r) {
+  const tmp = new Float32Array(W * H), out = new Float32Array(W * H), k = 2 * r + 1;
+  for (let y = 0; y < H; y++) { let s = 0; const o = y * W; for (let x = -r; x <= r; x++) s += src[o + Math.min(W - 1, Math.max(0, x))]; for (let x = 0; x < W; x++) { tmp[o + x] = s / k; s += src[o + Math.min(W - 1, x + r + 1)] - src[o + Math.max(0, x - r)]; } }
+  for (let x = 0; x < W; x++) { let s = 0; for (let y = -r; y <= r; y++) s += tmp[Math.min(H - 1, Math.max(0, y)) * W + x]; for (let y = 0; y < H; y++) { out[y * W + x] = s / k; s += tmp[Math.min(H - 1, y + r + 1) * W + x] - tmp[Math.max(0, y - r) * W + x]; } }
+  return out;
 }
 /* Ищет линии таблицы: длинные непрерывные тёмные отрезки. Возвращает границы строк и столбцов или null. */
 function findGrid(cx, W, H) {
@@ -49,8 +100,8 @@ function findGrid(cx, W, H) {
   const spans = l => l.slice(0, -1).map((a, i) => [a[1] + 1, l[i + 1][0] - 1]).filter(s => s[1] - s[0] > 12);
   T = 150; return { rows: spans(hl), cols: spans(vl), dark };
 }
-async function ocrImage(blob) {
-  const { cv, cx, small } = await toCanvas(blob); const w = await getOcr(); const g = findGrid(cx, cv.width, cv.height);
+async function ocrImage(blob, raw) {
+  const { cv, cx, small } = await toCanvas(blob, raw); const w = await getOcr(); const g = findGrid(cx, cv.width, cv.height);
   if (g && g.rows.length >= 1 && g.cols.length >= 3) {
     // таблица: каждая ячейка читается отдельно, строка таблицы становится одной строкой текста
     const lines = []; let conf = 0, nc = 0, seq = 0;
@@ -70,10 +121,10 @@ async function ocrImage(blob) {
       else if (narrow && seq === 0 && lines.length && !/[a-zа-яё]{2}/i.test(first)) { seq = 1; first = '1.'; }
       lines.push((first ? first + ' ' : '') + rest);
     }
-    if (lines.length) return { text: lines.join('\n'), conf: nc ? Math.round(conf / nc) : 0, small, table: true };
+    if (lines.length) { const text = lines.join('\n'); return { text, conf: nc ? Math.round(conf / nc) : 0, small, table: true, q: ocrQuality(text) }; }
   }
-  const data = await readBoth(w, cv, '3');
-  return { text: data.text, conf: Math.round(data.conf), small, table: false };
+  const data = await readLines(w, cv, '3');
+  return { text: data.text, conf: Math.round(data.conf), small, table: false, q: ocrQuality(data.text) };
 }
 
 /* Снимок с идентификаторами автора: нужны только латиница и цифры, поэтому читается английской моделью, ячейки таблицы — по отдельности */

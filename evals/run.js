@@ -2,7 +2,7 @@
 // Запуск: node evals/run.js
 const fs = require('fs'), path = require('path'); const B = path.join(__dirname, '..');
 const src = fs.readFileSync(B + '/src/core.js', 'utf8').replace(/if \(typeof module[^\n]*\n?$/m, '') + fs.readFileSync(B + '/src/net.js', 'utf8').replace(/if \(typeof module[^\n]*\n?$/m, '');
-const A = new Function(src + '\nreturn {getJson,tfetch,PING_MS,corrOf,orgMatch,findDuplicates,instNames,oaShip,orcidExternalIds,ST,matchScore,findDoi,FOUND_OK,oaWork,oaSearchWorks,instRu,loadRef,findJournal,splitEntries,splitSiteEntries,detectSite,isUiLine,parseEntry,titleScore,canonName,leaderVariants,sameSurname,authorPosition,journalVerdict,judgePub,judgeProfileWork,detectLeader,parseAuthorInput,orcidValid,wlAt,passFilter,parseFIO,nameMatch,translitVariants,NET,crWork,findWork,enrichOA,enrichWL,authorInfo,searchAuthors,authorByOrcid,authorByScopus,orcidSearch,runSelfCheck,SELF,authorWorks,cleanOrcid,pingAll};')();
+const A = new Function(src + '\nreturn {orgHit,leaderByOrg,ocrQuality,isElibList,CACHE,cacheKey,judgePub,getJson,tfetch,PING_MS,corrOf,orgMatch,findDuplicates,instNames,oaShip,orcidExternalIds,ST,matchScore,findDoi,FOUND_OK,oaWork,oaSearchWorks,instRu,loadRef,findJournal,splitEntries,splitSiteEntries,detectSite,isUiLine,parseEntry,titleScore,canonName,leaderVariants,sameSurname,authorPosition,journalVerdict,judgePub,judgeProfileWork,detectLeader,parseAuthorInput,orcidValid,wlAt,passFilter,parseFIO,nameMatch,translitVariants,NET,crWork,findWork,enrichOA,enrichWL,authorInfo,searchAuthors,authorByOrcid,authorByScopus,orcidSearch,runSelfCheck,SELF,authorWorks,cleanOrcid,pingAll};')();
 const DATA = JSON.parse(fs.readFileSync(B + '/data/ref.json', 'utf8'));
 // вымышленные издания для кейсов «квартиль по годам»: история задана за 2021–2025, более ранние годы справочника — пусто
 const fake = (t, issn, h) => DATA.sj.push([t, issn, 0, '', 900000 + DATA.sj.length, ...Array(2 * (DATA.sjYears.length - 5)).fill(null), ...h]);
@@ -100,6 +100,54 @@ View Abstract`;
 2. Ivanov I., Smirnov A. Thermal stability of layered composites. Journal of Materials. 2019.`;
   eq('0.7.10 / обычный список заявки: сайт не определяется, разбор прежний', [A.detectSite(PLAIN), n(PLAIN)], [null, 2]);
   eq('0.7.10 / строка со статьёй интерфейсной не считается', [A.isUiLine('Cited by 12'), A.isUiLine('Next'), A.isUiLine('Страница 2 из 7'), A.isUiLine('Синтез тонких плёнок методом магнетронного распыления'), A.isUiLine('DOI: 10.1234/vym.2021.05.014')], [true, true, true, false, false]);
+}
+
+
+/* --- 0.7.11. Ожидания записаны до прогона; все данные вымышленные --- */
+{
+  // правка 1: организация для выбора автора
+  const MIS = 'National University of Science and Technology MISIS';
+  eq('0.7.11 / организация: «НИТУ МИСИС» и английское название — совпала', A.orgHit([MIS], 'НИТУ МИСИС'), 'yes');
+  eq('0.7.11 / организация: русское название (из OpenAlex) и русский ввод — совпала', A.orgHit(['Test University', 'Национальный исследовательский технологический университет «МИСИС»'], 'НИТУ «МИСИС»'), 'yes');
+  eq('0.7.11 / организация: только общее слово-понятие («Московский») — частично, а не «совпала»', A.orgHit(['Moscow Institute of Physics and Technology'], 'Московский'), 'part');
+  eq('0.7.11 / организация: общих слов нет — «нет»', A.orgHit(['Other Institute of Physics'], 'Test University'), 'no');
+  eq('0.7.11 / организация: у кандидата не указана — «не указана»', A.orgHit([], 'НИТУ МИСИС'), 'unk');
+  eq('0.7.11 / организация: не введена — не учитывается', A.orgHit(['Test University'], '  '), null);
+  const wk = [{ oaAuthors: [{ id: 'A1', name: 'Anna Sokolova', inst: [{ name: 'Test University' }] }, { id: 'A9', name: 'A. Sokolova', inst: [{ name: 'Other Institute of Physics' }] }] }];
+  const cs = [{ id: 'A1', name: 'Anna Sokolova' }, { id: 'A9', name: 'A. Sokolova' }];
+  eq('0.7.11 / однофамильцы среди авторов статей: организация оставляет одного', (r => [r.hit, r.list.map(x => x.id)])(A.leaderByOrg(wk, cs, 'Test University')), ['yes', ['A1']]);
+  eq('0.7.11 / однофамильцы: организация ни у кого не совпала — никого не отбрасываем', (r => [r.hit, r.list.length])(A.leaderByOrg(wk, cs, 'Вымышленный институт химии')), ['none', 2]);
+  eq('0.7.11 / однофамильцы: организация не указана — список как был', (r => [r.hit, r.list.length])(A.leaderByOrg(wk, cs, '')), [null, 2]);
+  // правка 4: список eLibrary в настоящем виде (текст, как его даёт распознавание: номер, флажок, НАЗВАНИЕ, авторы, источник, число цитирований справа)
+  const EL = `Публикации автора
+1 |! СИНТЕЗ НАНОСТРУКТУРИРОВАННЫХ ПОКРЫТИЙ НА ОСНОВЕ ОКСИДА ТИТАНА 0
+Иванов И.И., Петрова М.С.
+В сборнике: Материалы Всероссийской научной конференции «Вымышленные материалы». Москва, 2025. С. 26.
+2 THERMAL STABILITY OF LAYERED COMPOSITE COATINGS UNDER CYCLIC 5
+LOAD
+Ivanov I.I., Smirnov A.V.
+Materials Letters. 2025. Т. 382. С. 137913.
+3 ВЫМЫШЛЕННЫЙ СОРБЕНТ ДЛЯ ОЧИСТКИ ХОЛОДНОЙ МОРСКОЙ ВОДЫ
+2
+Петрова М.С., Иванов И.И.
+Журнал вымышленной физики. 2024. Т. 94. № 3. С. 210-218.
+4 СПОСОБ ПОЛУЧЕНИЯ ВЫМЫШЛЕННОГО ЗАЩИТНОГО ПОКРЫТИЯ
+Иванов И.И., Петрова М.С.
+Патент на изобретение ВО 2814949 С1, 07.03.2024. Заявка № 2023121420 от 16.08.2023.`;
+  const E = A.splitEntries(EL);
+  eq('0.7.11 / eLibrary: узнан по виду списка, 4 записи с номерами 1–4', [A.detectSite(EL), E.length, E.map(e => e.num)], ['elibrary', 4, [1, 2, 3, 4]]);
+  eq('0.7.11 / eLibrary: название с переносом склеено, число цитирований справа и флажок в запись не попали', [/UNDER CYCLIC LOAD/.test(E[1].query), /^\|!|\s0 Иванов|COATINGS UNDER CYCLIC 5/.test(E[0].query + E[1].query), /ВОДЫ 2 Петрова/.test(E[2].query)], [true, false, false]);
+  eq('0.7.11 / «В сборнике:» — в запрос идёт название статьи и год, сборник отдельно', [/^СИНТЕЗ НАНОСТРУКТУРИРОВАННЫХ/.test(E[0].query), /Материалы|конференции/.test(E[0].query), /2025$/.test(E[0].query), /^Материалы Всероссийской/.test(E[0].container || '')], [true, false, true, true]);
+  eq('0.7.11 / патент: распознан (номер и с ошибками распознавания «ВО … С1»), статьи — нет', [E.map(e => !!e.patent), E[3].patentNo], [[false, false, false, true], 'RU2814949C1']);
+  eq('0.7.11 / патент на полезную модель в обычном списке', (e => [e.patent, e.patentNo])(A.parseEntry('5. Иванов И.И. Вымышленное устройство. Патент на полезную модель RU 225524 U1, 2024.')), [true, 'RU225524U1']);
+  eq('0.7.11 / патент: в базах не ищется, пометка «патент», не «не найдена»', (r => [r.found, r.work, r.notes.some(n => /патент — в Crossref и OpenAlex не ищется/.test(n))])(A.judgePub(E[3], undefined, {})), ['patent', null, true]);
+  eq('0.7.11 / «В сборнике:» и в обычном нумерованном списке', (e => [/конференции/.test(e.query), /Вымышленный доклад о покрытиях/.test(e.query)])(A.splitEntries('1. Иванов И.И. Вымышленный доклад о покрытиях // В сборнике: Труды конференции «Покрытия». 2023. С. 5.\n2. Петрова М.С. Другая статья. Вестник. 2022.')[0]), [false, true]);
+  const GOST = `1. Иванов И.И., Петрова М.С. Синтез тонких плёнок оксида титана // Вестник вымышленного университета. 2021. Т. 5. № 2. С. 10–20.
+2. Петрова М.С. Термическая стойкость покрытий // Журнал вымышленной физики. 2022. Т. 94. С. 210–218.`;
+  eq('0.7.11 / обычный список по ГОСТ («2021. Т. 5. С. 10») за eLibrary не принимается', [A.detectSite(GOST), A.splitEntries(GOST).length], [null, 2]);
+  eq('0.7.11 / качество распознавания: мусор — низкая доля читаемых слов, обычный список — высокая', [A.ocrQuality('О*® ОУ О © О” ©О” ©0» ОЕ5ТСМ АМО ©О').ratio < 0.35, A.ocrQuality(GOST).ratio >= 0.35], [true, true]);
+  // удобство 2: ключ кеша без ключа OpenAlex
+  eq('0.7.11 / кеш: ключ OpenAlex в адрес-ключ кеша не попадает', A.cacheKey('https://api.openalex.org/works?search=x&api_key=SECRET&per-page=5'), 'https://api.openalex.org/works?search=x&per-page=5');
 }
 
 // --- издания (0.7.9: только факты, без выводов «да/нет»): [кейс, ISSN, название, квартиль за последний год, найдено в SCImago, найдено в Белом списке]

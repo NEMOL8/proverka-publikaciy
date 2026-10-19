@@ -11,8 +11,9 @@
 main{max-width:1500px;margin:0 auto;padding:16px}
 h1{font-size:18px;margin:0 0 4px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:.05em}
 h2{text-transform:uppercase;letter-spacing:.05em;font-weight:700;font-size:15px;color:var(--acc);margin:22px 0 8px}
-header.top{background:var(--brand) url(/*NET*/) right -60px center/300px no-repeat;border-bottom:3px solid var(--brandred);margin:-16px -16px 0;padding:18px 24px 16px;display:flex;align-items:center;gap:22px}
-header.top .dim{color:var(--beige)}
+/* шапка по брендбуку (0.7.11): сетчатая сфера с красными орбитами — на графите #363A3D, снизу тонкая линия фирменного красного; бордовый — цвет ссылок */
+header.top{background:var(--graphite) url(/*NET*/) right -60px center/300px no-repeat;border-bottom:3px solid var(--brandred);margin:-16px -16px 0;padding:18px 24px 16px;display:flex;align-items:center;gap:22px}
+header.top .dim{color:#d9d6d2}
 #outList>h2,#outAuthor>h2{border-left:4px solid var(--beige);padding-left:8px}
 table.t th{background:var(--acc);color:#fff;border-color:var(--acc)}
 .plinks table.t th{background:var(--accbg);color:var(--ink);border-color:var(--line)}
@@ -30,12 +31,14 @@ table.t th,table.t td{border:1px solid var(--line);padding:6px 7px;vertical-alig
 table.t th{background:var(--accbg);font-weight:700;color:var(--ink)}
 .chip{display:inline-block;padding:1px 7px;border-radius:0;font-size:12px;font-weight:700;border:1px solid transparent}
 .chip.ok{background:#e3f4e4;border-color:#9ccf9f;color:#1d5a22}.chip.check{background:#fff6c9;border-color:#e2cf6a;color:#665200}.chip.no{background:#e6dccf;border-color:#b9a58c;color:#3D352B}.chip.n{background:#f4efe8;border-color:#dccbb6;color:#414042}.chip.unk{background:#ffe6c7;border-color:#e8b676;color:#74430a}
-a{color:var(--acc);text-decoration-color:var(--beige);text-underline-offset:2px}a:hover{text-decoration-color:var(--acc)}
+a{color:var(--brand);text-decoration-color:var(--beige);text-underline-offset:2px}a:hover{text-decoration-color:var(--brand)}
 details{margin-top:10px}summary{cursor:pointer;font-weight:700}
 .scroll{overflow-x:auto}
 .plinks{background:#fff;border:1px solid var(--line);border-radius:0;padding:8px 10px;margin:8px 0}.plinks table.t{margin-top:6px}
 ul{margin:4px 0 8px;padding-left:20px}
-@media print{.noprint{display:none}body{background:#fff}#nav,#toinp{display:none!important}}
+@media print{.noprint,.fbar,button,.mk,.alts button{display:none!important}body{background:#fff;font-size:10.5px}main{max-width:none;padding:0}header.top{margin:0 0 8px;padding:8px 0;background:#fff!important;border-bottom:2px solid var(--acc)}header.top h1{color:var(--acc)}header.top .dim{color:var(--dim)}
+  #nav,#toinp,#resume,#pgerr{display:none!important}.card{border:0;padding:0;margin:0}table.t{table-layout:auto;font-size:9.5px}table.t th{background:#eee!important;color:#000!important}table.t tr{break-inside:avoid}tr.done>td{background:#fff}
+  a{color:#000;text-decoration:none}.scroll{overflow:visible}h2{margin:10px 0 4px}}
 .topnav{display:flex;flex-wrap:wrap;gap:4px 26px;align-items:baseline;padding:10px 14px}.topnav>details{margin:0}.topnav>details[open]{flex-basis:100%;order:2;border-top:1px solid var(--line);padding-top:6px}.topnav>details>summary{font-weight:700;color:var(--acc)}
 details.adv{margin-top:8px}details.adv>summary{font-weight:400;color:var(--dim)}
 /* строка быстрых переходов (правка 1) */
@@ -68,51 +71,74 @@ td.notes{font-size:12.5px}
 .sum .sb{background:var(--accbg);border:1px solid var(--beige);padding:2px 9px;font-size:12.5px}
 .sum .sb b{font-size:14px}
 .hline{margin-top:8px;font-size:12.5px;line-height:1.7}
+/* шапка автора: имя и заметная плашка индекса Хирша (правка 2, 0.7.11) */
+.auhead{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:stretch;margin:8px 0 10px}
+.auhead .auname{flex:0 1 auto;min-width:260px;max-width:640px}.auhead .auname .nm{font-size:17px;font-weight:700}
+.hplate{flex:0 1 auto;display:flex;align-items:center;gap:14px;background:#fff;border:1px solid var(--beige);border-left:4px solid var(--acc);padding:8px 14px}
+.hplate .hl{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);line-height:1.3}
+.hplate .hv{font-size:30px;font-weight:700;line-height:1;color:var(--acc)}
+.hplate .hs{font-size:12.5px;line-height:1.5}
+/* распознавание: крупное предупреждение вместо мусора (правка 4) */
+.ocrwarn{margin:6px 0;padding:8px 12px;background:#ffe6c7;border:1px solid #e8b676;color:#74430a}
+.ocrwarn b{font-size:14.5px}
+/* прошлая проверка, сортировка, «проверено», перетаскивание (удобство, 0.7.11) */
+.resume{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;border-top-color:var(--acc)}
+th.sort{cursor:pointer;user-select:none}th.sort:hover{text-decoration:underline}th .arr{font-weight:400;opacity:.8}
+tr.done>td{background:#f1f8f1}td .mk{display:block;margin-top:4px;font-size:11.5px;font-weight:400;color:var(--dim);white-space:nowrap}td .mk input{margin:0 3px 0 0;vertical-align:-2px}
+body.dragging main{outline:3px dashed var(--acc);outline-offset:-6px}
+.prog{display:inline-block;width:160px;height:8px;background:var(--accbg);border:1px solid var(--beige);vertical-align:middle;margin:0 8px}.prog>span{display:block;height:100%;background:var(--acc)}
+.nchips .chip{margin:0 3px 3px 0}
 </style></head><body><main>
 <header class="top"><div><h1>Публикации: квартиль, Белый список, импакт-фактор, авторы</h1>
 <div class="dim"><span id="ver"></span>. <span id="refinfo"></span></div></div></header>
 <div id="nav" class="noprint"></div>
 <div id="pgerr" class="card" style="display:none;border-top-color:#e2cf6a;background:#fff6c9"></div>
+<div id="resume" class="card resume noprint" style="display:none"></div>
 <div class="card noprint topnav">
 <details><summary>Как пользоваться</summary>
 <ol>
 <li><b>Список публикаций</b> (раздел 1): вставьте снимок списка (Ctrl+V) или текст и нажмите «Найти публикации». Сверьте распознанный текст со снимком. По каждой статье — квартиль SCImago и уровень Белого списка на год публикации (и сейчас, если отличается), импакт-фактор, авторы и corresponding author, ссылки. Если утилита сомневается, какая это статья, — покажет варианты с кнопкой «Это она».</li>
-<li><b>Автор</b> (раздел 2): ФИО кириллицей или латиницей, ORCID, Scopus ID, ResearcherID или строка идентификаторов целиком. Покажутся ссылки на все профили автора и все его публикации. Если по ФИО найдено несколько человек — выберите нужного кнопкой «Это он». Кнопка «Найти другого автора» очищает поле и результат, список публикаций остаётся.</li>
+<li><b>Автор</b> (раздел 2): ФИО кириллицей или латиницей, ORCID, Scopus ID, ResearcherID или строка идентификаторов целиком. Организация рядом помогает отличить однофамильцев: если по ней совпал ровно один человек с полным именем — он выбирается сам. Покажутся индекс Хирша, ссылки на все профили автора и все его публикации. Если по ФИО найдено несколько человек — выберите нужного кнопкой «Это он». Кнопка «Найти другого автора» очищает поле и результат, список публикаций остаётся.</li>
 <li>Снимок можно делать прямо со страницы базы (ORCID, Google Scholar, Scopus, eLibrary, Web of Science): кнопки, пагинация и счётчики цитирований в текст записи не попадут.</li>
-<li>Фильтры над таблицами: квартиль и уровень Белого списка объединяются через «или», остальные условия — через «и». «Скопировать…» — вставляется в Excel.</li>
+<li>Фильтры над таблицами: квартиль и уровень Белого списка объединяются через «или», остальные условия — через «и». Клик по заголовку «Год», «Квартиль», «Белый список», «Импакт-фактор» — сортировка. Флажок «проверено» в строке — для себя, сохраняется в браузере. «Скопировать…» — вставляется в Excel; «Скачать Excel» и «CSV» — файлом; «Печать / PDF» — таблица без кнопок и фильтров.</li>
+<li>Ctrl+Enter в поле списка — найти публикации; снимок можно вставить Ctrl+V или перетащить в любое место страницы. Прошлая проверка сохраняется в браузере — при следующем открытии её можно продолжить.</li>
 <li>Пометки: <span class="chip ok">да</span> — подтверждено базой; <span class="chip check">проверьте</span> — источники расходятся или совпадение неполное, решите сами; <span class="chip unk">не указан / не найдено</span> — утилита этого не знает, это <b>не</b> означает несоответствие; <span class="chip no">нет</span> — база отвечает «нет»; <span class="chip n">Q1</span> — просто значение.</li>
 <li>Импакт-фактор в таблицах — «цитирований на документ за 2 года» SCImago: близок к импакт-фактору, но не равен импакт-фактору WoS. Квартиль WoS, CiteScore и индекс Хирша Scopus, WoS, РИНЦ открытых источников не имеют — утилита даёт ссылки, где посмотреть. Corresponding author — как отмечено в OpenAlex; если не отмечен, никто не подставляется.</li>
 <li>Если что-то не находится — «Связь и настройки» → «Проверить связь».</li>
 </ol>
 </details>
 <details><summary>Что нового</summary><div id="changes"></div></details>
-<details><summary>Что уходит в интернет</summary><p>Текст каждой записи списка (авторы, название статьи, издание) — в открытые базы Crossref и, если там не нашлось, OpenAlex; DOI найденной статьи и сведения об авторе, которые вы ввели (ФИО, ORCID, Scopus ID, ResearcherID), — в OpenAlex и в реестр ORCID; ISSN издания — на сайт Белого списка. Организация для сверки никуда не отправляется: сверка идёт на этом компьютере. Сами снимки не отправляются: текст с них распознаётся на этом компьютере. Квартиль, импакт-фактор и Белый список берутся из справочников внутри страницы.</p></details>
+<details><summary>Что уходит в интернет</summary><p>Текст каждой записи списка (авторы, название статьи, издание) — в открытые базы Crossref и, если там не нашлось, OpenAlex; DOI найденной статьи и сведения об авторе, которые вы ввели (ФИО, ORCID, Scopus ID, ResearcherID), — в OpenAlex и в реестр ORCID; ISSN издания — на сайт Белого списка. Организация автора никуда не отправляется: по ней на этом компьютере выбирается нужный человек среди найденных. Сами снимки не отправляются: текст с них распознаётся на этом компьютере. Квартиль, импакт-фактор и Белый список берутся из справочников внутри страницы. Последняя проверка, отметки «проверено» и кеш ответов баз хранятся только в этом браузере.</p></details>
 <details><summary>Связь и настройки</summary>
 <p><button id="ping" class="sec">Проверить связь</button> <button id="self" class="sec">Самопроверка на известных статьях</button></p><div id="pingres"></div><div id="selfres"></div>
 <p><label style="font-weight:400"><input type="checkbox" id="useWL" checked> Сверять уровень издания с сайтом Белого списка</label></p>
 <p><label style="font-weight:400"><input type="checkbox" id="useORCID" checked> Использовать реестр ORCID (поиск автора по Scopus ID, ResearcherID и имени)</label></p>
 <div style="max-width:420px;margin-bottom:8px"><label for="orcidToken">Токен ORCID «/read-public» (если реестр его потребует)</label><input type="text" id="orcidToken"><div class="dim">Бесплатный, выдаётся в личном кабинете ORCID (раздел «Developer tools»). Хранится только в этом браузере. <span id="orcidNote"></span></div></div>
 <p><label style="font-weight:400"><input type="checkbox" id="useOA" checked> Использовать OpenAlex (corresponding author, тип «обзор», поиск автора, запасной поиск статей)</label></p>
+<p><label style="font-weight:400"><input type="checkbox" id="useCache" checked> Брать ответы Crossref и OpenAlex из кеша браузера, если им меньше 14 дней (повторная проверка того же списка — мгновенно, лимиты не тратятся)</label> <button id="cacheClear" class="sec small">Очистить кеш</button> <span id="cacheInfo" class="dim"></span></p>
 <details class="adv"><summary>Дополнительно</summary><div style="max-width:420px"><label for="oaKey">Свой ключ OpenAlex</label><input type="text" id="oaKey"><div class="dim">Ключ OpenAlex уже встроен в страницу — поле заполнять не нужно. Своё значение нужно, только если встроенный дневной лимит закончился (OpenAlex отвечает «база ограничила число запросов»). Хранится только в этом браузере.</div></div></details>
 </details>
 </div>
 <div id="inp" class="card noprint">
 <h2 style="margin-top:0">1. Список публикаций</h2>
 <div id="drop">Вставьте снимок (Ctrl+V), перетащите его сюда или <input type="file" id="file" accept="image/*" multiple> — либо вставьте список текстом ниже.
-<details class="mini"><summary>как сделать снимок получше</summary><span class="dim">Точнее всего — текст, скопированный из Word или PDF. Снимок — крупный и резкий, без обрезанных краёв: мелкий шрифт распознаётся с ошибками (особенно DOI и годы). Снимок страницы базы можно делать целиком: кнопки и пагинация отбрасываются сами.</span></details></div>
-<div id="ocrmsg" class="dim"></div>
-<textarea id="list" placeholder="1. Авторы. Название статьи. Год. Издание&#10;2. …"></textarea>
+<div class="dim">eLibrary: список публикаций на странице можно выделить мышью и скопировать — текстом точнее, чем снимком.</div>
+<details class="mini"><summary>как сделать снимок получше</summary><span class="dim">Точнее всего — текст, скопированный из Word, PDF или со страницы базы. Снимок — крупный и резкий (шириной от 1200 точек), без обрезанных краёв: мелкий шрифт распознаётся с ошибками (особенно DOI и годы). Увеличьте страницу в браузере (Ctrl и «+») перед снимком. Снимок страницы базы можно делать целиком: кнопки и пагинация отбрасываются сами.</span></details></div>
+<div id="ocrmsg" class="dim"></div><div id="ocrwarn"></div>
+<textarea id="list" placeholder="1. Авторы. Название статьи. Год. Издание&#10;2. …&#10;&#10;Ctrl+Enter — найти публикации"></textarea>
 <div id="cnt" class="dim"></div>
-<p><button id="go">Найти публикации</button> <button id="copy" class="sec" style="display:none">Скопировать таблицу</button> <span id="status" class="dim"></span></p>
+<p><button id="go">Найти публикации</button> <button id="stop" class="sec" style="display:none">Остановить</button> <button id="retry" class="sec" style="display:none">Повторить ненайденные</button> <span id="status" class="dim"></span></p>
+<p id="listOut" style="display:none;margin:0"><button id="copy" class="sec small">Скопировать таблицу</button> <button id="xlsx" class="sec small">Скачать Excel</button> <button id="csv" class="sec small">CSV</button> <button class="sec small" onclick="printPage()">Печать / PDF</button></p>
 </div>
 <div class="card noprint">
 <h2 style="margin-top:0">2. Автор и все его публикации</h2>
-<label for="author">ФИО, ORCID, Scopus ID, ResearcherID — или строка с несколькими идентификаторами</label>
+<div class="row"><div style="flex:3 1 380px"><label for="author">ФИО, ORCID, Scopus ID, ResearcherID — или строка с несколькими идентификаторами</label>
 <input type="text" id="author" placeholder="Иванов Иван Иванович   или   AAA-1234-2020/57000000000/0000-0002-1825-0097">
-<div class="dim">Снимок с идентификаторами — Ctrl+V в это поле или <input type="file" id="afile" accept="image/*">. Порядок значений не важен.</div>
+<div class="dim">Снимок с идентификаторами — Ctrl+V в это поле или <input type="file" id="afile" accept="image/*">. Порядок значений не важен.</div></div>
+<div style="flex:2 1 280px"><label for="org">Организация автора <span style="font-weight:400">(чтобы отличить однофамильцев)</span></label><input type="text" id="org" placeholder="например: НИТУ МИСИС"><div class="dim">Помогает выбрать нужного человека среди найденных по ФИО. Никуда не отправляется.</div></div></div>
 <div id="aparsed" class="dim" style="margin-top:4px"></div>
-<p><button id="ago">Найти автора</button> <button id="anew" class="sec">Найти другого автора</button> <button id="acopy" class="sec" style="display:none">Скопировать публикации автора</button> <span id="astatus" class="dim"></span></p>
-<details class="adv"><summary>Дополнительно</summary><div style="max-width:620px"><label for="org">Организация для сверки</label><input type="text" id="org" placeholder="например: Научно-технологический университет «Сириус»"><div class="dim">Если указать, у каждой статьи автора будет сверка: от этой ли организации он указан.</div></div></details>
+<p><button id="ago">Найти автора</button> <button id="anew" class="sec">Найти другого автора</button> <span id="astatus" class="dim"></span></p>
+<p id="auOut" style="display:none;margin:0"><button id="acopy" class="sec small">Скопировать публикации автора</button> <button id="axlsx" class="sec small">Скачать Excel</button> <button id="acsv" class="sec small">CSV</button> <button class="sec small" onclick="printPage()">Печать / PDF</button></p>
 </div>
 <div id="outList" class="scroll"></div>
 <div id="outAuthor" class="scroll"></div>

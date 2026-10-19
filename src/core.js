@@ -1,7 +1,12 @@
 /* ===== Проверка публикаций: правила (без сети, без ИИ) ===== */
-const VERSION = '0.7.10', VERSION_DATE = '16.10.2026';
+const VERSION = '0.7.11', VERSION_DATE = '19.10.2026';
 /* Что нового — показывается на странице */
 const CHANGES = [
+  ['0.7.11', '19.10.2026', ['Организация автора — открытое поле рядом с ФИО: по ней выбирается нужный человек среди однофамильцев (совпала у одного с полным именем — выбран сам; у кандидатов пометка «организация совпала»). Сверка организации по каждой статье и фильтр «Организация» убраны; организация в статье показывается просто как факт.',
+    'Индекс Хирша — заметной плашкой рядом с именем автора: крупно значение OpenAlex, рядом ссылки Scopus · WoS · РИНЦ.',
+    'Снимки eLibrary: перед распознаванием снимок обрабатывается (синий и фиолетовый текст на сером становится чёрным, контраст, резкость), каждая строка читается русской и английской моделью; разбор списка eLibrary по настоящему виду страницы; «В сборнике: …» не попадает в поиск статьи; патенты помечаются «патент — не ищется». Плохо распознанный снимок не вставляется молча — крупное предупреждение и кнопка «Всё равно вставить».',
+    'Шапка по брендбуку: графит с сетчатой сферой и красными орбитами, тонкая красная линия снизу; ссылки — бордовые.',
+    'Удобство: прошлая проверка сохраняется в браузере («Продолжить прошлую проверку»); кеш ответов Crossref и OpenAlex на 14 дней; «Повторить ненайденные»; прогресс и «Остановить»; «Скачать Excel» и CSV; «Печать / PDF»; Ctrl+V и перетаскивание снимка в любое место; Ctrl+Enter; сортировка кликом по заголовку; отметка «проверено» в строке; причина пометки — короткой фразой.']],
   ['0.7.10', '16.10.2026', ['После «Найти публикации», «Найти автора» и выбора варианта страница сама переходит к результату; под шапкой — строка переходов со счётчиками, внизу справа — кнопка «К вводу».',
     'Основные темы автора показываются по-русски (раздел науки OpenAlex); точное английское название — в подсказке при наведении.',
     'Кнопка «Найти другого автора»: очищает поле и прежний результат, не трогая список публикаций.',
@@ -143,12 +148,48 @@ function isUiLine(l, repeats) {
   }
   return false;
 }
+/* ---------- eLibrary (РИНЦ), список публикаций — по настоящему виду страницы (правка 4, 0.7.11) ----------
+   Карточка: номер, флажок, НАЗВАНИЕ ЗАГЛАВНЫМИ (ссылка), ниже курсивом авторы, ниже источник:
+   «В сборнике: … Москва, 2025. С. 26.» или «Materials Letters. 2025. Т. 382. С. 137913.»; справа отдельной колонкой — число цитирований. */
+const ELIB_SRC = /^(В\s+сборнике|В\s+книге|В\s+журнале|В\s+монографии)\s*:|\b(19|20)\d{2}\.\s*(Т\.|№|С\.)\s*\d|Патент\s+на\s+(изобретение|полезную\s+модель)/i;
+/* Строка заглавными: не меньше трёх слов из букв и почти все буквы — прописные */
+function isCapsLine(l) {
+  const t = String(l || '').replace(/^\d{1,3}\s*[.)]?\s*/, ''); const letters = t.replace(/[^A-Za-zА-Яа-яЁё]/g, '');
+  if (letters.length < 12 || t.split(/\s+/).filter(w => /[A-Za-zА-Яа-яЁё]{2}/.test(w)).length < 3) return false;
+  return letters.replace(/[^A-ZА-ЯЁ]/g, '').length / letters.length >= 0.85;
+}
+function isElibList(text) {
+  const L = String(text || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const src = L.filter(l => ELIB_SRC.test(l)).length, caps = L.filter(isCapsLine).length;
+  return src >= 2 && caps >= Math.max(1, Math.ceil(src * 0.5));
+}
+function splitElib(L) {
+  const blocks = []; let cur = null, num = null;
+  const push = () => { if (cur && cur.length) blocks.push((num != null ? num + '. ' : '') + cur.join('\n')); cur = null; num = null; };
+  for (let i = 0; i < L.length; i++) {
+    let l = L[i];
+    if (isCapsLine(l) && !(cur && cur.length && isCapsLine(cur[cur.length - 1]) && !ELIB_SRC.test(cur.join(' ')) && !/^\d{1,3}\s*[.)]?\s/.test(l))) {
+      push();
+      const m = l.match(/^(\d{1,3})\s*[.)]?\s+/); if (m) { num = +m[1]; l = l.slice(m[0].length); }
+      l = l.replace(/^[☐□■▢☑✓|\[\]!]{1,3}\s*(?=[A-ZА-ЯЁ])/, '');  // флажок слева от названия (распознаётся как «|!», «[]»)
+      l = l.replace(/\s+\d{1,4}$/, '');                       // число цитирований из правой колонки
+      cur = [l]; continue;
+    }
+    if (!cur) continue;                                      // до первой карточки — шапка страницы
+    if (/^\d{1,4}$/.test(l)) continue;                       // число цитирований отдельной строкой
+    // продолжение названия на следующей строке — тоже заглавными
+    cur.push(isCapsLine(l) ? l.replace(/\s+\d{1,4}$/, '') : l);
+  }
+  push();
+  return blocks.map(b => [b]).filter(b => b[0].length >= 25);
+}
 /* Признаки конкретных сайтов. Список расширяемый: если признаков нет, работает общая разбивка. */
 function detectSite(text) {
   const t = String(text || '');
   if (/CONTRIBUTORS\s*:/i.test(t) && /(Source\s*:|Preferred\s+source)/i.test(t)) return 'orcid';
   if (/(Цитировать|Все\s+версии\s+статьи|versions\s+of\s+this\s+article|Cited\s+by\s+\d+)/i.test(t) && /^.+\s[—–-]\s.*(19|20)\d{2}\s*[—–-]\s*\S+/m.test(t)) return 'scholar';
   if (/(Общее\s+число\s+публикаций|Число\s+цитирований|elibrary|РИНЦ)/i.test(t) && /(Соавторы|Журнал)/i.test(t)) return 'elibrary';
+  if (isElibList(t)) return 'elibrary';
   if (/^By\s*:/im.test(t) && /(Times\s+Cited|Create\s+Citation\s+Report)/i.test(t)) return 'wos';
   if (/(View\s+abstract|Cited\s+by|Documents)/i.test(t) && /\d+\s*[-–—]\s*\d+\s+of\s+[\d\s,]+/i.test(t)) return 'scopus';
   return null;
@@ -179,6 +220,7 @@ function splitBySite(lines, site) {
     push();
     return blocks.filter(b => b.length >= 2);
   }
+  if (site === 'elibrary' && isElibList(L.join('\n'))) return splitElib(L);
   if (site === 'scopus' || site === 'wos' || site === 'elibrary') {
     // карточка: заголовок, затем авторы и издание; строка с годом закрывает карточку
     const yr = /\b(19[5-9]\d|20[0-4]\d)\b/;
@@ -235,6 +277,7 @@ function splitEntries(text) {
   out.forEach((e, i) => { const nx = out[i + 1]; if (e.num != null && nx && nx.num != null && nx.num > e.num + 1) e.warn = `после № ${e.num} в списке нет № ${e.num + 1} — проверьте, не слились ли две записи в одну`; });
   return out;
 }
+const PATENT_RE = /Патент\s+на\s+(изобретение|полезную\s+модель)|(^|[\s(])RU\s?\d{6,7}\s?[CU]\d\b|Заявка\s*№\s*\d{6,}/i;
 function parseEntry(raw) {
   let t = raw.replace(/([a-zа-яё])-\n(?=[a-zа-яё])/gi, '$1').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
   const e = { raw: t, num: null, doi: null, years: [], declIF: null, query: '' };
@@ -247,6 +290,12 @@ function parseEntry(raw) {
   else { m = q.match(/[\s|;,(]\(?(\d{1,3}[.,]\d{1,3})\)?\s*[|.]?\s*$/); if (m) { e.declIF = parseFloat(m[1].replace(',', '.')); q = q.slice(0, m.index); } }
   const now = new Date().getFullYear();
   e.years = [...new Set((q.match(/\b(?:19[5-9]\d|20[0-4]\d)\b/g) || []).map(Number).filter(y => y <= now + 1))];
+  // патент или заявка на патент — не статья: в Crossref и OpenAlex не ищется (правка 4)
+  m = t.match(PATENT_RE); if (m) { e.patent = true; const n = t.match(/(?:\bRU|ВО|BO|РУ|В\/О)\s?(\d{6,7})\s?([CUСИ]\d)\b/i); if (n) e.patentNo = 'RU' + n[1] + n[2].toUpperCase().replace('С', 'C').replace('И', 'U'); }
+  // «В сборнике: …», «В книге: …», «В журнале: …» — дальше издание, а не название: в запрос идёт название (и год),
+  // иначе Crossref находит сам сборник, а не статью
+  m = q.match(/(^|\s)В\s+(сборнике|книге|журнале|монографии)\s*:/i);
+  if (m && m.index > 15) { e.container = q.slice(m.index + m[0].length).replace(/\s+/g, ' ').trim(); q = q.slice(0, m.index) + (e.years.length ? ' ' + e.years.join(' ') : ''); }
   e.query = q.replace(/[|]/g, ' ').replace(/\s+/g, ' ').trim();
   return e;
 }
@@ -351,7 +400,7 @@ function corrOf(authors, ids) {
    Сверка организации автора в статье (OpenAlex: institutions, raw_affiliation_strings) с организацией из заявки.
    Слова приводятся к одному виду: кириллица — в латиницу, общие слова («университет», «государственный», «federal») отбрасываются,
    частые переводные слова («московский» — «moscow», «технологический» — «technological») сводятся к одному понятию. */
-const ORG_STOP = new Set('university universitet universiteta institute institut instituta federal federalnoe federalnyi federalnogo state gosudarstvennyi gosudarstvennogo gosudarstvennoe national natsionalnyi natsionalnogo research issledovatelskii issledovatelskogo nauchno nauchnyi nauchnogo scientific science of the and for in at on named imeni im after center centre tsentr school shkola higher vysshaia vysshego autonomous avtonomnoe budgetary biudzhetnoe biudzhetnoi educational obrazovatelnoe obrazovatelnoi obrazovaniia uchrezhdenie uchrezhdeniia institution organization organizatsiia faculty fakultet department kafedra otdel branch filial ltd llc fgaou fgbou fgbun fgbu fgau ano ooo ao pao vo dpo'.split(' '));
+const ORG_STOP = new Set('university universitet universiteta institute institut instituta federal federalnoe federalnyi federalnogo state gosudarstvennyi gosudarstvennogo gosudarstvennoe national natsionalnyi natsionalnogo research issledovatelskii issledovatelskogo nauchno nauchnyi nauchnogo scientific science of the and for in at on named imeni im after center centre tsentr school shkola higher vysshaia vysshego autonomous avtonomnoe budgetary biudzhetnoe biudzhetnoi educational obrazovatelnoe obrazovatelnoi obrazovaniia uchrezhdenie uchrezhdeniia institution organization organizatsiia faculty fakultet department kafedra otdel branch filial ltd llc fgaou fgbou fgbun fgbu fgau ano ooo ao pao vo dpo nitu niu'.split(' '));
 const ORG_CONCEPT = [['moskov', 'moscow', 'moskva', 'moskvy'], ['peterburg', 'petersburg', 'spb'], ['ross', 'russia'], ['sibir', 'siberia'], ['akadem', 'academ'], ['tekhnolog', 'technolog'], ['tekhnich', 'technical', 'techni'], ['politekhn', 'polytechn'], ['meditsin', 'medic'], ['pedagog', 'pedagog'], ['fiz', 'physic', 'physical'], ['khim', 'chemi', 'chemical'], ['matemat', 'mathemat'], ['biolog', 'biolog'], ['ekonom', 'econom'], ['agrar', 'agricult'], ['gorn', 'mining'], ['iadern', 'nuclear'], ['aviats', 'aviation'], ['aerokosm', 'aerospace'], ['kosm', 'space'], ['inzhener', 'engineer'], ['priborostr', 'instrument'], ['energet', 'energ'], ['neft', 'petrol', 'oil'], ['lesn', 'forest'], ['morsk', 'marine', 'maritime'], ['veterinar', 'veterinar'], ['iuzhn', 'southern', 'south'], ['severn', 'northern', 'north'], ['dalnevostoch', 'far eastern', 'far east'], ['ural', 'ural'], ['volg', 'volga'], ['kavkaz', 'caucas'], ['sirius', 'sirius']];
 function orgTokens(s) {
   let t = String(s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/ё/g, 'е');
@@ -381,6 +430,41 @@ function orgMatch(insts, input) {
   // нет общих слов, но названия на разных языках — перевод мог не распознаться: «проверьте», а не «другая»
   if (best.st === 'no' && isCyr(input) !== isCyr(best.name)) best.st = 'check';
   return { st: best.st, name: best.name };
+}
+
+/* Совпадение организации кандидата с введённой — для выбора автора среди однофамильцев (правка 1, 0.7.11).
+   'yes' — названия совпали; 'part' — есть общие значимые слова; 'no' — общих слов нет; 'unk' — у кандидата организация не указана; null — организация не введена */
+function orgHit(names, input) {
+  if (!orgTokens(input).length) return null;
+  names = (names || []).map(x => String(x || '').trim()).filter(Boolean); if (!names.length) return 'unk';
+  const it = orgTokens(input); let best = 'no';
+  for (const n of names) {
+    const nt = orgTokens(n); if (!nt.length) continue;
+    const a = it.filter(x => nt.some(y => orgTokEq(x, y))).length, b = nt.filter(y => it.some(x => orgTokEq(x, y))).length;
+    if (a === it.length && b === nt.length) return 'yes';
+    // аббревиатура и полное название («МИСИС» и «National University of Science and Technology MISIS»): все слова введённого есть в названии
+    if (a === it.length && it.some(x => x[0] !== '#')) return 'yes';
+    if (a || b) best = 'part';
+  }
+  return best;
+}
+/* Авторы статей из списка с нужной фамилией (detectLeader): если указана организация, оставить тех, у кого она совпала хотя бы в одной статье.
+   Если не совпала ни у кого — не отбрасывать никого. Возвращает {list, hit}. */
+function leaderByOrg(works, cands, input) {
+  if (!orgTokens(input).length || !cands.length) return { list: cands, hit: null };
+  const names = id => { const out = []; (works || []).forEach(w => (w && w.oaAuthors || []).forEach(a => { if (a.id === id) out.push(...instNames(a)); })); return out; };
+  const r = cands.map(c => ({ c, st: orgHit(names(c.id), input) }));
+  const yes = r.filter(x => x.st === 'yes'), part = r.filter(x => x.st === 'part');
+  if (yes.length) return { list: yes.map(x => x.c), hit: 'yes' };
+  if (part.length) return { list: part.map(x => x.c), hit: 'part' };
+  return { list: cands, hit: 'none' };
+}
+/* Качество распознанного снимка: доля читаемых слов (из 4+ букв одного алфавита). Мусор вроде «О*® ОУ © ОЕ5ТСМ» — низкая доля. */
+function ocrQuality(text) {
+  const toks = String(text || '').split(/\s+/).map(t => t.replace(/^[«"“(\[]+|[»"”)\].,;:!?]+$/g, '')).filter(Boolean);
+  if (!toks.length) return { words: 0, ratio: 0 };
+  const ok = toks.filter(t => /^([A-Za-z][A-Za-z'’-]{3,}|[А-Яа-яЁё][А-Яа-яЁё-]{3,})$/.test(t)).length;
+  return { words: toks.length, good: ok, ratio: Math.round(ok / toks.length * 100) / 100 };
 }
 
 /* ---------- возможные дубли в списке ----------
@@ -449,6 +533,7 @@ const FOUND_OK = 0.85, FOUND_NEAR = 0.6;
 function judgePub(entry, work, opt) {
   opt = opt || {};
   const r = { entry, work, found: ST.unk, notes: entry.warn ? [entry.warn] : [], j: null, jv: null };
+  if (entry.patent) { r.found = 'patent'; r.work = null; r.notes.push('патент — в Crossref и OpenAlex не ищется'); return r; }
   if (!work) { r.found = work === null ? ST.no : ST.unk; r.notes.push(work === null ? 'в открытых базах (Crossref, OpenAlex) не найдено — проверьте вручную по ссылкам поиска' : 'запрос не выполнен'); return r; }
   if (work.via === 'doi' || work.via === 'manual') r.found = ST.ok;
   else { r.found = work.score >= FOUND_OK ? ST.ok : (work.score >= FOUND_NEAR ? ST.check : ST.no); if (r.found === ST.check) r.notes.push('найденная статья совпадает с записью не полностью — убедитесь, что это та же статья, или выберите из вариантов'); }
@@ -562,4 +647,4 @@ function judgeProfileWork(w, ids) { const r = judgeProfileWork0(w);
 const instNames = me => !me ? [] : ((me.inst && me.inst.length) ? me.inst.map(x => x.name) : (me.raw || []));
 function judgeProfileWork0(w) { const j = findJournal(w.issns, w.journal); const jv = journalVerdict(j, w.year, null, null); return { w, j, jv }; }
 
-if (typeof module !== 'undefined') module.exports = { splitSiteEntries, detectSite, isUiLine, instNames, CHANGES, corrOf, orgMatch, orgTokens, findDuplicates, isPreprint, VERSION, ST, ST_NAME, norm, normIssn, lev, loadRef, findJournal, splitEntries, parseEntry, titleScore, canonName, leaderVariants, sameSurname, authorPosition, journalVerdict, sjAt, detectLeader, parseAuthorInput, orcidValid, wlAt, passFilter, parseFIO, nameMatch, translitVariants, judgePub, judgeProfileWork, matchScore, findDoi, FOUND_OK, FOUND_NEAR, cleanDoi, fmtNum, fmtIssn };
+if (typeof module !== 'undefined') module.exports = { orgHit, leaderByOrg, ocrQuality, isElibList, isCapsLine, splitSiteEntries, detectSite, isUiLine, instNames, CHANGES, corrOf, orgMatch, orgTokens, findDuplicates, isPreprint, VERSION, ST, ST_NAME, norm, normIssn, lev, loadRef, findJournal, splitEntries, parseEntry, titleScore, canonName, leaderVariants, sameSurname, authorPosition, journalVerdict, sjAt, detectLeader, parseAuthorInput, orcidValid, wlAt, passFilter, parseFIO, nameMatch, translitVariants, judgePub, judgeProfileWork, matchScore, findDoi, FOUND_OK, FOUND_NEAR, cleanDoi, fmtNum, fmtIssn };

@@ -13,23 +13,38 @@ async function init() {
   $('changes').innerHTML = CHANGES.map(c => `<p><b>${c[0]}</b> <span class="dim">${c[1]}</span></p><ul>${c[2].map(x => '<li>' + esc(x) + '</li>').join('')}</ul>`).join('');
   // кнопки и поля работают сразу; поиск включается, когда загружены справочники
   $('file').addEventListener('change', e => addImages([...e.target.files]));
+  $('stop').addEventListener('click', () => { STOP = true; $('stop').disabled = true; $('status').textContent = 'Останавливаю после текущей публикации…'; });
+  $('retry').addEventListener('click', retryMissing); $('xlsx').addEventListener('click', () => exportList('xlsx')); $('csv').addEventListener('click', () => exportList('csv'));
+  $('axlsx').addEventListener('click', () => exportAuthor('xlsx')); $('acsv').addEventListener('click', () => exportAuthor('csv'));
+  $('cacheClear').addEventListener('click', async () => { await cacheClear(); cacheInfo(); }); $('useCache').addEventListener('change', () => { LS.set('pc_useCache', $('useCache').checked); cacheInfo(); });
+  // Ctrl+Enter в поле списка — найти публикации (удобство 8)
+  $('list').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); runList(); } });
   $('afile').addEventListener('change', e => authorImage([...e.target.files]));
   document.addEventListener('paste', e => { const im = [...(e.clipboardData ? e.clipboardData.items : [])].filter(i => i.type.startsWith('image/')).map(i => i.getAsFile()); if (!im.length) return; e.preventDefault(); if (document.activeElement === $('author')) authorImage(im); else addImages(im); });
-  const dz = $('drop'); ['dragover', 'dragenter'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('on'); })); ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('on'); }));
-  dz.addEventListener('drop', e => addImages([...e.dataTransfer.files].filter(f => f.type.startsWith('image/'))));
+  // снимок можно перетащить в любое место страницы (удобство 7); на поле автора — снимок с идентификаторами
+  const hasFiles = e => e.dataTransfer && [...(e.dataTransfer.types || [])].indexOf('Files') >= 0; let dragN = 0;
+  document.addEventListener('dragenter', e => { if (!hasFiles(e)) return; e.preventDefault(); dragN++; document.body.classList.add('dragging'); });
+  document.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
+  document.addEventListener('dragleave', e => { if (!hasFiles(e)) return; if (--dragN <= 0) { dragN = 0; document.body.classList.remove('dragging'); } });
+  document.addEventListener('drop', e => { if (!hasFiles(e)) return; e.preventDefault(); dragN = 0; document.body.classList.remove('dragging'); const im = [...e.dataTransfer.files].filter(f => f.type.startsWith('image/')); if (!im.length) return; if (e.target && e.target.closest && e.target.closest('#author')) authorImage(im); else addImages(im); });
   $('go').addEventListener('click', runList); $('ago').addEventListener('click', runAuthor); $('anew').addEventListener('click', resetAuthor); $('ping').addEventListener('click', ping); $('self').addEventListener('click', selfCheck); $('copy').addEventListener('click', copyList); $('acopy').addEventListener('click', copyAuthor);
-  $('list').addEventListener('input', countEntries); $('author').addEventListener('input', showParsed);
+  $('list').addEventListener('input', () => { countEntries(); saveState(true); }); $('author').addEventListener('input', () => { showParsed(); saveState(true); });
   $('author').addEventListener('keydown', e => { if (e.key === 'Enter') runAuthor(); });
-  $('org').addEventListener('change', () => { renderList(); renderAuthor(); });
+  // организация помогает выбрать автора: если кандидаты уже показаны — пересортировать их
+  $('org').addEventListener('change', () => { if (AU.cands && !(AU.prof && !AU.prof.err)) { rankCands(AU); renderAuthor(); } saveState(true); });
   window.addEventListener('scroll', navScroll, { passive: true });
   try { $('oaKey').value = localStorage.getItem('pc_oaKey') || ''; $('orcidToken').value = localStorage.getItem('pc_orcidToken') || ''; $('org').value = localStorage.getItem('pc_org') || ''; } catch (e) { }
   if (OA_BUILTIN) { $('oaKey').placeholder = 'встроенный ключ уже подключён — поле можно не заполнять'; }
   if (ORCID_BUILTIN) { $('orcidToken').placeholder = 'встроенный токен уже подключён — поле можно не заполнять'; $('orcidNote').textContent = 'В эту сборку встроен токен ORCID. Своё значение в поле заменит его только в этом браузере.'; }
   $('org').addEventListener('input', () => { try { localStorage.setItem('pc_org', $('org').value); } catch (e) { } });
   if (!ocrAvailable()) { $('drop').innerHTML = 'Распознавание снимков в эту сборку не включено — вставьте список текстом.'; $('afile').style.display = 'none'; }
+  try { const uc = LS.get('pc_useCache'); if (uc === false) $('useCache').checked = false; } catch (e) { }
   updateNav(); navScroll();
   await loadData();
+  if (REF) offerRestore();
+  cacheInfo();
 }
+async function cacheInfo() { CACHE.on = $('useCache').checked && typeof indexedDB !== 'undefined'; const n = CACHE.on ? await cacheCount() : 0; $('cacheInfo').textContent = CACHE.on ? (n ? `в кеше ответов: ${n}` : 'кеш пуст') : 'кеш не используется'; }
 /* Справочники: в одной странице — внутри, на сайте — файл data/ref.json (около 8 МБ) с показом хода загрузки и ограничением по времени */
 async function loadData() {
   const btns = ['go', 'ago'];
@@ -78,14 +93,26 @@ async function authorImage(files) {
   BUSY = false;
 }
 function countEntries() { const n = splitEntries($('list').value).length; $('cnt').textContent = n ? `Публикаций в списке: ${n}. Каждая должна начинаться с номера («1.») или отделяться пустой строкой.` : ''; }
+/* Плохо распознанный снимок не вставляется молча: показывается крупная пометка, текст можно вставить кнопкой (правка 4, 0.7.11) */
+const OCR_MIN_CONF = 60, OCR_MIN_RATIO = 0.35;
+const ocrBad = r => r.conf < OCR_MIN_CONF || (r.q && r.q.words >= 8 && r.q.ratio < OCR_MIN_RATIO);
+let PENDING_OCR = '';
+function addText(t) { $('list').value = ($('list').value.trim() ? $('list').value.trim() + '\n' : '') + String(t).trim() + '\n'; countEntries(); saveState(true); }
+function insertPending() { if (PENDING_OCR) addText(PENDING_OCR); PENDING_OCR = ''; $('ocrwarn').innerHTML = ''; $('ocrmsg').innerHTML += ' <b>Плохо распознанный текст вставлен — исправьте его по снимку.</b>'; }
 async function addImages(files) {
-  if (!files.length || BUSY) return; BUSY = true;
+  if (!files.length || BUSY) return; BUSY = true; $('ocrwarn').innerHTML = ''; PENDING_OCR = '';
   try {
     for (let i = 0; i < files.length; i++) {
       $('ocrmsg').textContent = `Распознаю снимок ${i + 1} из ${files.length}… (первый раз — до минуты)`;
       const r = await ocrImage(files[i]);
-      $('list').value = ($('list').value.trim() ? $('list').value.trim() + '\n' : '') + r.text.trim() + '\n';
-      $('ocrmsg').innerHTML = `Снимок распознан${r.table ? ' как таблица' : ''} (уверенность ${r.conf} %). <b>Сверьте текст со снимком и поправьте ошибки</b> — особенно названия статей, годы и DOI.` + (r.small ? ' Снимок мелкий: лучше сделать его крупнее или вставить текст.' : '');
+      if (ocrBad(r)) {
+        PENDING_OCR += (PENDING_OCR ? '\n' : '') + r.text.trim();
+        $('ocrmsg').textContent = '';
+        $('ocrwarn').innerHTML = `<div class="ocrwarn"><b>Снимок распознан плохо (уверенность ${r.conf} %${r.q && r.q.words ? ', читаемых слов ' + Math.round(r.q.ratio * 100) + ' %' : ''})</b> — текст в список не вставлен, чтобы не искать мусор. Увеличьте снимок (страницу в браузере — Ctrl и «+») или скопируйте текст со страницы${r.small ? '; снимок мелкий — нужна ширина от 1200 точек' : ''}. <button class="sec small" onclick="insertPending()">Всё равно вставить распознанный текст</button></div>`;
+        continue;
+      }
+      addText(r.text);
+      $('ocrmsg').innerHTML = `Снимок распознан${r.table ? ' как таблица' : ''} (уверенность ${r.conf} %). <b>Сверьте текст со снимком и поправьте ошибки</b> — особенно названия статей, годы и DOI.` + (r.small ? ' Снимок мелкий (уже 1200 точек): лучше сделать его крупнее или вставить текст.' : '');
     }
   } catch (e) { $('ocrmsg').textContent = 'Снимок не распознан: ' + (e.message || e) + '. Вставьте список текстом.'; }
   BUSY = false; countEntries();
@@ -104,8 +131,8 @@ function applyNet() { NET.useORCID = $('useORCID').checked; NET.orcidOff = ''; N
 
 const auIds = () => AU.prof && !AU.prof.err ? AU.prof.ids : [];
 function curOpt() { return { leaderIds: auIds() }; }
-function rejudge() { const opt = curOpt(); W.opt = opt; W.pubs = W.entries.map((e, i) => { const p = judgePub(e, W.works[i], opt); if (W.works[i] === undefined) p.notes = ['запрос не выполнен: ' + W.netDown]; return p; }); W.dups = findDuplicates(W.pubs); }
-function renderAll() { renderList(); renderAuthor(); updateNav(); }
+function rejudge() { const opt = curOpt(); W.opt = opt; W.pubs = W.entries.map((e, i) => { const p = judgePub(e, W.works[i], opt); if (W.works[i] === undefined && !e.patent) p.notes = [W.netDown ? 'запрос не выполнен: ' + W.netDown : (W.stopped ? 'не проверена — поиск остановлен; нажмите «Повторить ненайденные»' : 'не проверена')]; return p; }); W.dups = findDuplicates(W.pubs); }
+function renderAll() { renderList(); renderAuthor(); updateNav(); if (W.entries) retryVis(); }
 
 /* Правка 2: раздел науки по-русски (справочник subfields.js); точная тема OpenAlex — в подсказке */
 function topicsHtml(a) {
@@ -121,15 +148,18 @@ const NOTE_SHORT = [[/^возможный дубль/, 'возможный ду�
   [/DOI из списка/, 'DOI не найден'], [/несколько изданий с таким ISSN/, 'издание неоднозначно'], [/издание найдено по названию/, 'найдено по названию'],
   [/исключено из Белого списка/, 'исключено из Белого списка'], [/сайт Белого списка отвечает иначе/, 'сайт БС отвечает иначе'], [/это разные показатели/, 'импакт-фактор расходится'],
   [/не найдено — проверьте вручную/, 'не найдена'], [/ближайшая найденная статья не похожа/, 'варианты не подошли'], [/в SCImago издание есть только до/, 'в SCImago данных за год нет'],
-  [/взят \d{4} год/, 'взят ближайший год'], [/в списке нет №/, 'пропущен номер в списке']];
+  [/взят \d{4} год/, 'взят ближайший год'], [/в списке нет №/, 'пропущен номер в списке'], [/поиск остановлен/, 'не проверена — остановлено'], [/^патент/, 'патент — не ищется'],
+  [/в SCImago тип издания/, 'в SCImago не журнал'], [/статья выбрана вручную/, 'выбрана вручную'], [/примечание Белого списка/, 'примечание Белого списка']];
+/* Удобство 11: причина пометки — короткой фразой прямо в строке; полный текст — в подсказке и под «подробнее» */
 function notesHtml(notes) {
   if (!notes.length) return '';
-  return notes.map(n => {
-    const tag = /^возможный дубль/.test(n) ? chip('check', 'дубль?') + ' ' : '';
-    const m = NOTE_SHORT.find(x => x[0].test(n));
-    if (!m || n.length <= 60) return tag + esc(n);
-    return tag + `<span title="${esc(n)}">${esc(m[1])}</span><details class="mini"><summary>подробнее</summary><span class="dim">${esc(n)}</span></details>`;
-  }).join('<br>');
+  const shorts = [], longs = [];
+  notes.forEach(n => {
+    const m = NOTE_SHORT.find(x => x[0].test(n)), dub = /^возможный дубль/.test(n);
+    if (!m || n.length <= 60) { if (!m && n.length > 60) { shorts.push(`<span title="${esc(n)}">${esc(n.slice(0, 50))}…</span>`); longs.push(n); return; } shorts.push(dub ? chip('check', 'дубль?') + ' ' + esc(n) : esc(n)); return; }
+    shorts.push(`<span title="${esc(n)}">${dub ? chip('check', 'дубль?') + ' ' : ''}${esc(m ? m[1] : n.slice(0, 50) + '…')}</span>`); longs.push(n);
+  });
+  return shorts.join('<br>') + (longs.length ? `<details class="mini"><summary>подробнее</summary><span class="dim">${longs.map(esc).join('<br>')}</span></details>` : '');
 }
 
 /* ----- Правка 1: переход к результату и строка быстрых переходов ----- */
@@ -157,24 +187,59 @@ function updateNav() {
 function navScroll() { const b = $('toinp'); if (b) b.style.display = window.scrollY > 500 ? '' : 'none'; }
 
 /* ----- Режим 1: список публикаций ----- */
+/* Удобство 4: прогресс «обработано 12 из 30» и «Остановить»; удобство 2: ответы из кеша браузера; патенты не ищутся */
+let STOP = false;
+const progHtml = (i, n, what) => `${what} ${i} из ${n} <span class="prog"><span style="width:${n ? Math.round(i / n * 100) : 0}%"></span></span>`;
+async function findOne(entry) {
+  const work = await findWork(entry);
+  if (work && (work.via === 'doi' || work.score >= FOUND_NEAR)) { if (work.doi) await enrichOA(work, []); await enrichWL(work); }
+  return work;
+}
+const cacheNote = () => CACHE.hits ? ` Из кеша браузера: ${CACHE.hits} ответ${CACHE.hits % 10 === 1 && CACHE.hits % 100 !== 11 ? '' : (CACHE.hits % 10 >= 2 && CACHE.hits % 10 <= 4 && (CACHE.hits % 100 < 10 || CACHE.hits % 100 >= 20) ? 'а' : 'ов')} баз (сохранены с ${new Date(CACHE.oldest).toLocaleDateString('ru-RU')}; свежие — «Связь и настройки» → «Очистить кеш»).` : '';
 async function runList() {
   if (BUSY || !REF) return;
   const entries = splitEntries($('list').value);
   if (!entries.length) { $('status').textContent = 'Список пуст: вставьте текст или снимок.'; return; }
-  BUSY = true; $('go').disabled = true; applyNet(); NET.log = []; goTo('status');
-  const works = []; let netDown = '';
+  BUSY = true; STOP = false; $('go').disabled = true; $('stop').style.display = ''; $('stop').disabled = false; $('retry').style.display = 'none'; applyNet(); NET.log = []; CACHE.hits = 0; CACHE.oldest = 0; goTo('status');
+  const works = []; let netDown = '', done = 0;
   for (let i = 0; i < entries.length; i++) {
-    $('status').textContent = `Ищу публикацию ${i + 1} из ${entries.length}…`;
-    let work;
-    if (netDown) work = undefined;
-    else { try { work = await findWork(entries[i]); if (work && (work.via === 'doi' || work.score >= FOUND_NEAR)) { if (work.doi) await enrichOA(work, []); await enrichWL(work); } } catch (e) { work = undefined; netDown = e.message; } }
-    works.push(work); await sleep(NET.pause);
+    $('status').innerHTML = progHtml(i, entries.length, 'Обработано');
+    let work; const m0 = CACHE.miss;
+    if (netDown || STOP || entries[i].patent) work = undefined;
+    else { try { work = await findOne(entries[i]); done++; } catch (e) { work = undefined; netDown = e.message; } }
+    works.push(work); if (work !== undefined && (!CACHE.on || CACHE.miss > m0)) await sleep(NET.pause);
   }
-  W.entries = entries; W.works = works; W.netDown = netDown; W.auto = null; W.numbered = entries.some(e => e.num != null);
+  W.entries = entries; W.works = works; W.netDown = netDown; W.stopped = STOP; W.auto = null; W.numbered = entries.some(e => e.num != null);
   // если автор ещё не выбран, а у статей списка есть общий автор — показать его публикации сразу
-  if (!netDown && !AU.prof && !$('author').value.trim()) { const det = detectLeader(works, []); if (det.how === 'auto') { W.auto = det.chosen[0].name; AU = newS(); await loadProfile(AU, det.chosen.map(a => a.id), 'общий автор статей из списка — проверьте, что это нужный человек'); await fetchOrcidIds(AU); } }
-  rejudge(); renderAll(); BUSY = false; $('go').disabled = false; goTo('outList');
-  $('status').textContent = netDown ? 'Поиск неполный: ' + netDown + '. Нажмите «Проверить связь».' : 'Готово.';
+  if (!netDown && !STOP && !AU.prof && !$('author').value.trim()) await autoLeader(works);
+  rejudge(); renderAll(); BUSY = false; $('go').disabled = false; $('stop').style.display = 'none'; goTo('outList');
+  $('status').textContent = (netDown ? 'Поиск неполный: ' + netDown + '. Нажмите «Проверить связь».' : (STOP ? `Остановлено: проверено ${done} из ${entries.length}. «Повторить ненайденные» доищет остальные.` : 'Готово.')) + cacheNote();
+  retryVis(); saveState();
+}
+/* Общий автор статей списка. Если явного нет, а указана организация — автор, у которого она совпала (правка 1) */
+async function autoLeader(works) {
+  const det = detectLeader(works, []); let chosen = det.how === 'auto' ? det.chosen : null, how = 'общий автор статей из списка — проверьте, что это нужный человек';
+  const org = $('org').value.trim();
+  if (!chosen && org && det.works >= 2) { const big = det.cands.filter(a => a.count >= Math.max(2, Math.ceil(det.works * 0.6))); const r = leaderByOrg(works, big, org); if (r.hit === 'yes' && r.list.length === 1) { chosen = r.list; how = 'общий автор статей из списка, у которого совпала организация — проверьте, что это нужный человек'; } }
+  if (!chosen) return;
+  W.auto = chosen[0].name; AU = newS(); await loadProfile(AU, chosen.map(a => a.id), how); await fetchOrcidIds(AU);
+}
+/* Удобство 3: повторить поиск только для ненайденных (и не проверенных), без кеша — свежим запросом */
+const missIdx = () => W.entries && W.pubs ? W.pubs.map((p, i) => i).filter(i => !W.entries[i].patent && (W.works[i] === undefined || W.works[i] === null || W.pubs[i].found === 'no')) : [];
+function retryVis() { const n = missIdx().length; $('retry').style.display = n && !BUSY ? '' : 'none'; $('retry').textContent = `Повторить ненайденные (${n})`; }
+async function retryMissing() {
+  if (BUSY) return; const idx = missIdx(); if (!idx.length) return;
+  BUSY = true; STOP = false; $('go').disabled = true; $('retry').style.display = 'none'; $('stop').style.display = ''; $('stop').disabled = false; applyNet(); NET.noCache = true; let netDown = '', k = 0;
+  for (const i of idx) {
+    $('status').innerHTML = progHtml(k++, idx.length, 'Повторно обработано');
+    if (STOP || netDown) break;
+    try { const w = await findOne(W.entries[i]); if (w !== undefined) W.works[i] = w; } catch (e) { netDown = e.message; }
+    await sleep(NET.pause);
+  }
+  NET.noCache = false; W.netDown = netDown; W.stopped = STOP;
+  rejudge(); renderAll(); BUSY = false; $('go').disabled = false; $('stop').style.display = 'none';
+  const left = missIdx().length; $('status').textContent = netDown ? 'Повтор неполный: ' + netDown + '.' : `Повтор готов: найдено ${idx.length - left} из ${idx.length}.`;
+  retryVis(); saveState(); goTo('outList');
 }
 const nchip = t => `<span class="chip n">${esc(t)}</span>`;
 const qChip = (q, big) => q ? `<span class="chip n${big ? ' cbig' : ''}">Q${q}</span>` : chip('unk', 'нет квартиля');
@@ -237,17 +302,15 @@ const CORR_T = { yes: 'да', no: 'нет', unk: 'в базе не указан'
 const CORR_C = { yes: 'ok', no: 'no', unk: 'unk' };
 const corrBig = st => chip((CORR_C[st] || 'unk') + ' cbig', 'Corresponding — ' + (CORR_T[st] || 'нет данных'));
 const corrChip = (st, others) => st === 'yes' ? chip('ok', 'да') : (st === 'no' ? chip('no', 'нет') + (others && others.length ? ` <span class="dim">— ${esc(others.join(', '))}</span>` : '') : (st === 'unk' ? chip('unk', 'в базе не указан') : chip('unk', 'нет данных')));
-const ORG_T = { yes: 'совпадает', check: 'не уверена — проверьте', no: 'другая организация', unk: 'в базе не указана' };
-const ORG_C = { yes: 'ok', check: 'check', no: 'n', unk: 'unk' };
-function orgOf(me) { const names = instNames(me), inp = $('org').value.trim(); const m = inp ? orgMatch(names, inp) : { st: names.length ? null : 'unk' }; return { names, st: m.st }; }
-function orgHtml(o) { return (o.names.length ? esc(o.names.slice(0, 3).join('; ')) : '') + (o.st ? ' ' + chip(ORG_C[o.st], o.names.length || o.st !== 'unk' ? ORG_T[o.st] : 'в базе не указана') : ''); }
+/* Организация автора в статье — только как факт; сверка по каждой статье убрана (правка 3, 0.7.11) */
+const orgNames = me => instNames(me).slice(0, 3);
 function listMe(w) { const ids = auIds(); if (!ids.length || !w.oaAuthors) return null; return { me: w.oaAuthors.find(a => ids.indexOf(a.id) >= 0) || null, corr: corrOf(w.oaAuthors, ids), others: w.oaAuthors.filter(a => a.corr && ids.indexOf(a.id) < 0).map(a => a.name) }; }
 function authorsCell(p) {
   const w = p.work, a = w.authors || [], f = aName(a[0]), l = a.length > 1 ? aName(a[a.length - 1]) : '';
   const m = listMe(w), nm = AU.prof && !AU.prof.err ? ((AU.prof.info[0] || {}).name || 'найденный автор') : ''; let h = '';
   if (m && m.me) {
     h += corrBig(m.corr) + `<div><b>${esc(nm)}</b></div>`;
-    const o = orgOf(m.me); if (o.names.length || o.st) h += `<div class="dim">${orgHtml(o)}</div>`;
+    const on = orgNames(m.me); h += `<div class="dim">${on.length ? esc(on.join('; ')) : 'организация в базе не указана'}</div>`;
     if (m.corr === 'no' && m.others.length) h += `<div class="dim">corresponding: ${esc(m.others.join(', '))}</div>`;
   } else if (m) h += chip('check', 'автора нет среди авторов статьи в OpenAlex') + `<div class="dim">${esc(nm)}</div><div>${corrArticle(w)}</div>`;
   else if (nm && w.oa === undefined) h += chip('unk cbig', 'Corresponding — нет данных') + `<div class="dim">${esc(nm)}: OpenAlex не ответил по этой статье</div>`;
@@ -259,24 +322,24 @@ function authorsCell(p) {
 const FLT0 = () => ({ q: [], wl: [], yFrom: 0, yTo: 0, corr: [], ifFrom: 0, org: [] });
 const FLT = { list: FLT0(), au: FLT0() };
 function rowKey(year, j, jv) { if (!j) return { y: year }; const a = j.wl ? wlAt(j.wl, year) : null; return { y: year, qY: j.sj ? (jv.qY || 0) : 0, wl: a ? (a.excluded ? 0 : a.lv) : null, excl: !!(a && a.excluded), cpd: jv && jv.cpd != null ? jv.cpd : null }; }
-const profKey = x => Object.assign(rowKey(x.w.year, x.j, x.jv), { corr: x.corrSt || 'unk', org: $('org').value.trim() ? orgOf(x.me).st : null });
-function listKey(p) { if (!p.work) return {}; const k = rowKey(p.work.year, p.j, p.jv), m = listMe(p.work); k.corr = m && m.me ? m.corr : 'unk'; k.org = m && m.me && $('org').value.trim() ? orgOf(m.me).st : 'unk'; return k; }
+const profKey = x => Object.assign(rowKey(x.w.year, x.j, x.jv), { corr: x.corrSt || 'unk' });
+function listKey(p) { if (!p.work) return {}; const k = rowKey(p.work.year, p.j, p.jv), m = listMe(p.work); k.corr = m && m.me ? m.corr : 'unk'; return k; }
 const reFlt = id => id === 'list' ? renderList() : renderAuthor();
 function filterBar(id, shown, total, noCpd) {
-  const f = FLT[id], corrOff = id === 'list' && !auIds().length, orgOn = !!$('org').value.trim();
+  const f = FLT[id], corrOff = id === 'list' && !auIds().length;
   const pill = (grp, v, t, dis) => `<label class="pill${f[grp].indexOf(v) >= 0 ? ' on' : ''}${dis ? ' off' : ''}"${dis ? ' title="заработает, когда найден автор (раздел 2)"' : ''}><input type="checkbox" ${f[grp].indexOf(v) >= 0 ? 'checked' : ''} ${dis ? 'disabled' : ''} onchange="setFlt('${id}','${grp}','${v}',this.checked)">${t}</label>`;
   const num = (k, ph, step) => `<input type="number" class="yr"${step ? ` step="${step}" min="0"` : ''} value="${f[k] || ''}" placeholder="${ph}" onchange="setFltY('${id}','${k}',this.value)">`;
-  const active = f.q.length || f.wl.length || f.yFrom || f.yTo || f.corr.length || f.ifFrom || f.org.length;
+  const active = f.q.length || f.wl.length || f.yFrom || f.yTo || f.corr.length || f.ifFrom;
   return `<div class="fbar noprint"><div class="fr"><span class="grp"><span class="gl">Квартиль</span>${['1', '2', '3', '4'].map(v => pill('q', v, 'Q' + v)).join('')}${pill('q', 'none', 'нет')}</span><span class="or">или</span><span class="grp"><span class="gl">Белый список</span>${['1', '2', '3', '4'].map(v => pill('wl', v, v)).join('')}${pill('wl', 'none', 'нет')}${pill('wl', 'excl', 'исключён')}</span>`
-    + `<span class="fright"><span class="cnt">Показано <b>${shown}</b> из ${total}${f.ifFrom && noCpd ? ` · без импакт-фактора (нет в SCImago) скрыто ${noCpd}` : ''}</span>${active ? `<button class="linkbtn" onclick="resetFlt('${id}')">Сбросить</button>` : ''}<details class="fhelp"><summary title="Как работает фильтр">?</summary><div>Квартиль, уровень и импакт-фактор — на год публикации. Отмеченные квартили и уровни объединяются через «или» («Q1» + «1» — статьи, у которых Q1 или 1 уровень Белого списка); годы, импакт-фактор, corresponding и организация — дополнительные условия «и». Импакт-фактор здесь — «цитирований на документ за 2 года» SCImago, это не импакт-фактор WoS.${corrOff ? ' Фильтр corresponding в этой таблице заработает, когда найден автор (раздел 2).' : ''}</div></details></span></div>`
+    + `<span class="fright"><span class="cnt">Показано <b>${shown}</b> из ${total}${f.ifFrom && noCpd ? ` · без импакт-фактора (нет в SCImago) скрыто ${noCpd}` : ''}</span>${active ? `<button class="linkbtn" onclick="resetFlt('${id}')">Сбросить</button>` : ''}<details class="fhelp"><summary title="Как работает фильтр">?</summary><div>Квартиль, уровень и импакт-фактор — на год публикации. Отмеченные квартили и уровни объединяются через «или» («Q1» + «1» — статьи, у которых Q1 или 1 уровень Белого списка); годы, импакт-фактор и corresponding — дополнительные условия «и». Импакт-фактор здесь — «цитирований на документ за 2 года» SCImago, это не импакт-фактор WoS.${corrOff ? ' Фильтр corresponding в этой таблице заработает, когда найден автор (раздел 2).' : ''}</div></details></span></div>`
     + `<div class="fr"><span class="grp"><span class="gl">Годы</span>${num('yFrom', 'с')} – ${num('yTo', 'по')}</span><span class="grp"><span class="gl">Импакт-фактор от</span>${num('ifFrom', 'любой', '0.1')}</span><span class="grp"><span class="gl">Corresponding</span>${pill('corr', 'yes', 'да', corrOff)}${pill('corr', 'no', 'нет', corrOff)}${pill('corr', 'unk', 'не указан', corrOff)}</span>`
-    + (orgOn ? `<span class="grp"><span class="gl">Организация</span>${pill('org', 'yes', 'совпадает')}${pill('org', 'check', 'проверьте')}${pill('org', 'no', 'другая')}${pill('org', 'unk', 'не указана')}</span>` : '') + `</div></div>`;
+    + `</div></div>`;
 }
-function setFlt(id, grp, v, on) { const a = FLT[id][grp], i = a.indexOf(v); if (on && i < 0) a.push(v); if (!on && i >= 0) a.splice(i, 1); reFlt(id); }
-function setFltY(id, k, v) { FLT[id][k] = k === 'ifFrom' ? (parseFloat(String(v).replace(',', '.')) || 0) : (+v || 0); reFlt(id); }
-function resetFlt(id) { FLT[id] = FLT0(); reFlt(id); }
+function setFlt(id, grp, v, on) { const a = FLT[id][grp], i = a.indexOf(v); if (on && i < 0) a.push(v); if (!on && i >= 0) a.splice(i, 1); reFlt(id); saveState(true); }
+function setFltY(id, k, v) { FLT[id][k] = k === 'ifFrom' ? (parseFloat(String(v).replace(',', '.')) || 0) : (+v || 0); reFlt(id); saveState(true); }
+function resetFlt(id) { FLT[id] = FLT0(); reFlt(id); saveState(true); }
 const listFlt = () => auIds().length ? FLT.list : Object.assign({}, FLT.list, { corr: [] });
-const listRows = () => W.pubs.map((p, i) => ({ p, i })).filter(({ p }) => passFilter(listKey(p), listFlt()));
+const listRows = () => sortRows(W.pubs.map((p, i) => ({ p, i })).filter(({ p }) => passFilter(listKey(p), listFlt())), 'list', r => listKey(r.p));
 const noCpdHidden = (keys, f) => f.ifFrom ? keys.filter(k => k.cpd == null && passFilter(k, Object.assign({}, f, { ifFrom: 0 }))).length : 0;
 
 /* ----- Варианты для спорных и ненайденных статей: выбирает человек ----- */
@@ -290,7 +353,7 @@ async function pickAlt(i, k) {
   const w0 = W.works[i], rest = [w0].concat(w0.alts || []).filter(x => x !== c);
   const nw = Object.assign({}, c, { via: 'manual', alts: rest.slice(0, 3) }); delete nw.doiMiss;
   try { if (nw.doi) await enrichOA(nw, []); await enrichWL(nw); } catch (e) { }
-  W.works[i] = nw; rejudge(); BUSY = false; renderAll();
+  W.works[i] = nw; rejudge(); BUSY = false; renderAll(); retryVis(); saveState();
 }
 /* Поискать статью самому: Google Scholar — с текстом записи, eLibrary — форма поиска */
 function searchLinks(e) {
@@ -301,28 +364,32 @@ const recordHtml = e => `<details class="mini"><summary>запись из спи
 
 function dupNotes(i) { return (W.dups || []).filter(d => d.a === i || d.b === i).map(d => { const o = d.a === i ? d.b : d.a; return `возможный дубль записи № ${numOf(W.pubs[o].entry, o)}: ${d.why}`; }); }
 const TH_Q = 'Квартиль SCImago<div class="sub">на год публикации</div>', TH_WL = 'Белый список<div class="sub">на год публикации</div>', TH_IF = 'Импакт-фактор<div class="sub">SCImago, цит. на документ за 2 года</div>';
+const patentLink = e => e.patentNo ? lnk('https://patents.google.com/patent/' + e.patentNo, 'патент ' + e.patentNo.replace(/^RU(\d+)/, 'RU $1 ')) : '';
+const doneCnt = (keys) => keys.filter(k => MARKS[k]).length;
 function renderList() {
-  if (!W.entries) { $('outList').innerHTML = ''; return; }
-  const pubs = W.pubs, rows = listRows(); let h = `<h2>Публикации из списка (${pubs.length})</h2>`;
+  if (!W.entries) { $('outList').innerHTML = ''; $('listOut').style.display = 'none'; return; }
+  const pubs = W.pubs, rows = listRows(), dn = doneCnt(pubs.map(markKeyL)); let h = `<h2>Публикации из списка (${pubs.length})${dn ? ` <span class="sub">· проверено ${dn}</span>` : ''}</h2>`;
   if (W.dups.length) h += `<p>${chip('check', 'проверьте')} Возможных дублей в списке: <b>${W.dups.length}</b> — ${W.dups.map(d => `№ ${numOf(pubs[d.a].entry, d.a)} и № ${numOf(pubs[d.b].entry, d.b)} (${esc(d.why)})`).join('; ')}. Утилита ничего не исключает — решите сами.</p>`;
   h += filterBar('list', rows.length, pubs.length, noCpdHidden(pubs.map(listKey), listFlt()));
-  h += `<table class="t pubs"><tr><th style="width:3%">№</th><th style="width:24%">Публикация</th><th style="width:14%">Издание</th><th style="width:11%">${TH_Q}</th><th style="width:11%">${TH_WL}</th><th style="width:10%">${TH_IF}</th><th style="width:15%">Авторы</th><th>Примечания</th></tr>`;
+  h += `<table class="t pubs"><tr><th style="width:6%">№</th>${sortTh('list', 'year', 'Публикация<div class="sub">сортировка по году</div>', 'width:23%')}<th style="width:13%">Издание</th>${sortTh('list', 'q', TH_Q, 'width:11%')}${sortTh('list', 'wl', TH_WL, 'width:11%')}${sortTh('list', 'if', TH_IF, 'width:10%')}<th style="width:14%">Авторы</th><th>Примечания</th></tr>`;
   rows.forEach(({ p, i }) => {
-    const w = p.work, e = p.entry, notes = p.notes.concat(dupNotes(i));
-    const nh = notesHtml(notes);
-    if (!w) { h += `<tr><td>${numOf(e, i)}</td><td><span class="dim">${esc(e.raw.length > 220 ? e.raw.slice(0, 220) + '…' : e.raw)}</span><br>${chip('unk', p.found === 'no' ? 'не найдена' : 'не проверена')}${altsHtml(i)}${p.found === 'no' ? searchLinks(e) : ''}</td><td colspan="5" class="dim">Статья не найдена в открытых базах — квартиль и остальное по ней не определены. Это не значит, что её нет.</td><td>${nh}</td></tr>`; return; }
+    const w = p.work, e = p.entry, notes = p.notes.concat(dupNotes(i)), mk = markKeyL(p), tr = MARKS[mk] ? '<tr class="done">' : '<tr>';
+    const nh = notesHtml(notes), num = `<td>${numOf(e, i)}${markBox(mk)}</td>`;
+    if (p.found === 'patent') { h += `${tr}${num}<td><span class="dim">${esc(e.raw.length > 220 ? e.raw.slice(0, 220) + '…' : e.raw)}</span><br>${nchip('патент')}${recordHtml(e)}</td><td colspan="5" class="dim">Патент — в Crossref и OpenAlex не ищется, квартиля и импакт-фактора у него нет.${e.patentNo ? ' Посмотреть: ' + patentLink(e) + '.' : ''}</td><td class="notes">${nh}</td></tr>`; return; }
+    if (!w) { h += `${tr}${num}<td><span class="dim">${esc(e.raw.length > 220 ? e.raw.slice(0, 220) + '…' : e.raw)}</span><br>${chip('unk', p.found === 'no' ? 'не найдена' : 'не проверена')}${altsHtml(i)}${p.found === 'no' ? searchLinks(e) : ''}</td><td colspan="5" class="dim">${p.found === 'no' ? 'Статья не найдена в открытых базах — квартиль и остальное по ней не определены. Это не значит, что её нет.' : 'Поиск по этой записи не выполнялся.'}</td><td class="notes">${nh}</td></tr>`; return; }
     const url = w.doi ? 'https://doi.org/' + w.doi : (w.oaId ? 'https://openalex.org/' + w.oaId : '');
     let c1 = (url ? lnk(url, w.title) : esc(w.title)).replace('<a ', '<a class="ttl" ') + `<div class="dim">${[w.year || 'год ?', p.typeName, w.doi ? 'DOI ' + lnk(url, w.doi) : 'DOI нет', w.source === 'OpenAlex' ? 'найдена в OpenAlex' : ''].filter(Boolean).join(' · ')}</div>`;
-    if (p.found === 'check') c1 += chip('check', 'похожая — проверьте');
+    // удобство 11: причина «проверьте» прямо в пометке
+    if (p.found === 'check') c1 += chip('check', `похожая (совпадение ${Math.round((w.score || 0) * 100)} %) — проверьте`);
     c1 += altsHtml(i) + recordHtml(e);
     const jc = `<b>${esc(w.journal || 'издание не указано')}</b>` + (w.issns.length ? '<div class="dim">ISSN ' + w.issns.map(x => esc(fmtIssn(normIssn(x)))).join(', ') + '</div>' : '') + '<div>' + idxText(p.j.wl) + '</div>';
-    h += `<tr><td>${numOf(e, i)}</td><td>${c1}</td><td>${jc}</td><td>${quartText(p.jv, p.j.sj, false, p.j.wl, w.issns)}</td><td>${wlCell(p)}</td><td>${ifCell(p)}</td><td>${authorsCell(p)}</td><td class="notes">${nh}</td></tr>`;
+    h += `${tr}${num}<td>${c1}</td><td>${jc}</td><td>${quartText(p.jv, p.j.sj, false, p.j.wl, w.issns)}</td><td>${wlCell(p)}</td><td>${ifCell(p)}</td><td>${authorsCell(p)}</td><td class="notes">${nh}</td></tr>`;
   });
   if (!rows.length) h += `<tr><td colspan="8" class="dim">Под фильтр не подходит ни одна статья.</td></tr>`;
   h += '</table>';
   const probs = [NET.oaOff ? 'OpenAlex отключился: ' + esc(NET.oaOff) + ' — corresponding и организации не определены' : '', NET.wlOff ? 'сайт Белого списка не ответил (' + esc(NET.wlOff) + ') — уровни взяты из справочника от ' + REF.wlDate : ''].filter(Boolean);
   if (probs.length) h += `<p class="dim">${probs.join('. ')}.</p>`;
-  $('outList').innerHTML = h; $('copy').style.display = '';
+  $('outList').innerHTML = h; $('listOut').style.display = '';
 }
 
 /* ----- Режим 2: автор. S — состояние поиска одного автора (раздел 2 или строка группы) ----- */
@@ -364,8 +431,11 @@ async function searchAuthor(S, input, st) {
     if (p.scopus && !found && !S.msgs.some(m => /Scopus ID/.test(m) && /OpenAlex/.test(m))) S.msgs.push('OpenAlex знает Scopus ID лишь у немногих авторов');
     // 4. ФИО среди авторов статей из списка — точно, если список найден
     if (!found && fios.length && W.entries) {
-      const det = detectLeader(W.works, [...new Set(fios.map(f => canonName(f.sur)))]); const ch = det.chosen.filter(a => fioOK(a.name, [], fios));
-      if (ch.length) { await loadProfile(S, ch.map(a => a.id), 'по ФИО среди авторов статей из списка', st); found = ch[0]; }
+      const det = detectLeader(W.works, [...new Set(fios.map(f => canonName(f.sur)))]); let ch = det.chosen.filter(a => fioOK(a.name, [], fios)), how = 'по ФИО среди авторов статей из списка';
+      // однофамильцы среди авторов статей: организация оставляет того, у кого она совпала (правка 1)
+      const org = $('org').value.trim();
+      if (ch.length && org) { const r = leaderByOrg(W.works, ch, org); if (r.hit === 'none') S.msgs.push(ORG_NONE); else if (r.list.length < ch.length) { ch = r.list; how += ', совпала организация'; } }
+      if (ch.length) { await loadProfile(S, ch.map(a => a.id), how, st); found = ch[0]; }
     }
     // 5. ФИО в OpenAlex и реестре ORCID, латиницей и кириллицей
     if (!found && fios.length) { st('Ищу автора по ФИО…'); const pick = await nameSearch(S, fios); if (pick) { await loadProfile(S, [pick.id], pick.how, st); found = pick; } }
@@ -376,21 +446,22 @@ async function searchAuthor(S, input, st) {
   } catch (e) { S.msgs.push('поиск не выполнен: ' + e.message); }
   try { await fetchOrcidIds(S); } catch (e) { }
 }
+const ORG_NONE = 'по указанной организации совпадений нет — возможно, автор сменил место работы или база её не знает';
 async function runAuthor() {
   if (BUSY || !REF) return; BUSY = true; $('ago').disabled = true; applyNet(); W.auto = null; AU = newS();
-  $('outAuthor').innerHTML = ''; $('acopy').style.display = 'none'; updateNav(); goTo('astatus');  // прежний результат убирается сразу
-  await searchAuthor(AU, $('author').value, t => { $('astatus').textContent = t; });
+  $('outAuthor').innerHTML = ''; $('auOut').style.display = 'none'; updateNav(); goTo('astatus');  // прежний результат убирается сразу
+  CACHE.hits = 0; CACHE.oldest = 0; await searchAuthor(AU, $('author').value, t => { $('astatus').textContent = t; });
   if (W.entries) rejudge();
-  BUSY = false; $('ago').disabled = false; $('astatus').textContent = ''; renderAll(); goTo('outAuthor');
+  BUSY = false; $('ago').disabled = false; $('astatus').textContent = cacheNote().trim(); renderAll(); goTo('outAuthor'); saveState();
 }
 /* Правка 4: перейти к следующему автору — поле и его результаты очищаются, список публикаций не трогается */
 function resetAuthor() {
   if (BUSY) return;
   AU = newS(); W.auto = null; FLT.au = FLT0();
   $('author').value = ''; $('aparsed').textContent = ''; $('astatus').textContent = '';
-  $('outAuthor').innerHTML = ''; $('acopy').style.display = 'none';
+  $('outAuthor').innerHTML = ''; $('auOut').style.display = 'none';
   if (W.entries) { rejudge(); renderList(); }
-  updateNav(); goTo('inp'); $('author').focus();
+  updateNav(); goTo('inp'); $('author').focus(); saveState();
 }
 /* Поиск по ФИО. Возвращает автора, если он определён однозначно, иначе заполняет S.cands для выбора. */
 async function nameSearch(S, fios) {
@@ -406,24 +477,37 @@ async function nameSearch(S, fios) {
   let orc = []; for (const q of oq) { const r = await orcidSearch(q); if (r.err) { S.msgs.push('поиск по имени в реестре ORCID: ' + r.err); break; } orc = orc.concat(r.list.filter(x => fioOK(x.name, [], fios))); }
   const fullGiven = a => fios.some(f => f.given && [a.name].concat(a.alt || []).some(n => { const t = n.replace(/\./g, ' ').split(/\s+/).filter(Boolean); return t.some(x => x.length > 1 && canonName(x) === canonName(f.given)); }));
   const patr = a => fios.some(f => f.patr && [a.name].concat(a.alt || []).some(n => n.replace(/\./g, ' ').split(/\s+/).some(x => x.length === 1 && canonName(x)[0] === canonName(f.patr)[0])));
-  strict.forEach(a => { a.fullGiven = fullGiven(a); a.patr = patr(a); a.inOrcid = !!(a.orcid && orc.some(o => o.orcid === a.orcid)); a.ru = /\bRU\b/.test(a.country || ''); a.score = (a.fullGiven ? 4 : 0) + (a.patr ? 3 : 0) + (a.inOrcid ? 2 : 0) + (a.ru ? 1 : 0) + Math.min(2, Math.log10((a.works || 0) + 1)); });
-  strict.sort((a, b) => b.score - a.score);
+  strict.forEach(a => { a.fullGiven = fullGiven(a); a.patr = patr(a); a.inOrcid = !!(a.orcid && orc.some(o => o.orcid === a.orcid)); a.ru = /\bRU\b/.test(a.country || ''); });
+  // русские названия организаций нужны до сортировки: организацию вводят по-русски (правка 1)
+  if (strict.length) { const ru = await instRu([].concat(...strict.slice(0, 40).map(a => a.instIds || []))); strict.forEach(a => { a.instRu = [...new Set((a.instIds || []).map(id => ru[id]).filter(Boolean))].join('; '); }); }
+  const org = $('org').value.trim(); rankList(strict, org);
   const orcOnly = orc.filter(o => !strict.some(a => a.orcid === o.orcid)).filter((o, i, arr) => arr.findIndex(x => x.orcid === o.orcid) === i);
-  // однозначно: ровно один кандидат с полным совпадением имени и (отчеством или подтверждением в реестре ORCID)
+  const orgAny = strict.some(a => a.org === 'yes' || a.org === 'part');
+  if (org && strict.length && !orgAny) S.msgs.push(ORG_NONE);
+  // однозначно по организации: ровно один кандидат с полным именем, у которого совпала организация
+  if (org) { const oy = strict.filter(a => a.fullGiven && a.org === 'yes'); if (oy.length === 1) { oy[0].how = 'по ФИО и организации: единственный профиль с полным именем, у которого совпала организация' + (oy[0].patr ? ', совпадает инициал отчества' : ''); return oy[0]; } }
+  // однозначно: ровно один кандидат с полным совпадением имени и (отчеством или подтверждением в реестре ORCID);
+  // но если организация указана и у него не совпала, а у другого совпала — пусть выберет человек
   const sure = strict.filter(a => a.fullGiven && (a.patr || a.inOrcid));
-  if (sure.length === 1 && strict.filter(a => a.fullGiven).length === 1) { sure[0].how = 'по ФИО: единственный подходящий профиль' + (sure[0].patr ? ', совпадает инициал отчества' : '') + (sure[0].inOrcid ? ', подтверждён реестром ORCID' : ''); return sure[0]; }
+  if (sure.length === 1 && strict.filter(a => a.fullGiven).length === 1 && !(org && sure[0].org !== 'yes' && orgAny)) { sure[0].how = 'по ФИО: единственный подходящий профиль' + (sure[0].patr ? ', совпадает инициал отчества' : '') + (sure[0].inOrcid ? ', подтверждён реестром ORCID' : ''); return sure[0]; }
   S.cands = strict.slice(0, 12); S.orcCands = orcOnly.slice(0, 8);
-  if (S.cands.length) { const ru = await instRu([].concat(...S.cands.map(a => a.instIds || []))); S.cands.forEach(a => { a.instRu = [...new Set((a.instIds || []).map(id => ru[id]).filter(Boolean))].join('; '); }); }
   if (!strict.length && !orcOnly.length) S.msgs.push(`по ФИО не найдено (искали: ${[...qs].slice(0, 6).join('; ')})`);
   return null;
 }
+/* Вес кандидата: полное имя 4, совпала организация 4 (частично 2), инициал отчества 3, запись в реестре ORCID 2, Россия 1, число работ до 2 */
+const splitNames = t => String(t || '').split(/;\s*/).filter(Boolean);
+function rankList(list, org) {
+  list.forEach(a => { a.org = orgHit(splitNames(a.inst).concat(splitNames(a.instRu)), org); a.score = (a.fullGiven ? 4 : 0) + (a.org === 'yes' ? 4 : (a.org === 'part' ? 2 : 0)) + (a.patr ? 3 : 0) + (a.inOrcid ? 2 : 0) + (a.ru ? 1 : 0) + Math.min(2, Math.log10((a.works || 0) + 1)); });
+  return list.sort((a, b) => b.score - a.score);
+}
+function rankCands(S) { const org = $('org').value.trim(); rankList(S.cands || [], org); S.msgs = (S.msgs || []).filter(m => m !== ORG_NONE); if (org && (S.cands || []).length && !S.cands.some(a => a.org === 'yes' || a.org === 'part')) S.msgs.push(ORG_NONE); }
 async function findSimilar(S) {
   const inf = S.prof.info[0]; if (!inf) return; const fios = parseFIO(inf.name); let list = [];
   try { list = await searchAuthors(inf.name); } catch (e) { return; }
   S.similar = list.filter(a => S.prof.ids.indexOf(a.id) < 0 && fioOK(a.name, a.alt, fios) && (!a.orcid || !inf.orcid || a.orcid === inf.orcid)).slice(0, 6);
 }
-async function afterPick(k) { const S = stOf(k); if (S.prof && !S.prof.err) { await findSimilar(S); try { await fetchOrcidIds(S); } catch (e) { } } if (W.entries) rejudge(); BUSY = false; renderAll(); goTo('outAuthor'); }
-async function addProfile(id, k) { k = k == null ? -1 : k; if (BUSY) return; BUSY = true; const S = stOf(k); const ids = S.prof.ids.concat([id]); await loadProfile(S, ids, S.prof.how + '; добавлен профиль ' + id); S.similar = (S.similar || []).filter(a => a.id !== id); if (W.entries) rejudge(); BUSY = false; renderAll(); goTo('outAuthor'); }
+async function afterPick(k) { const S = stOf(k); if (S.prof && !S.prof.err) { await findSimilar(S); try { await fetchOrcidIds(S); } catch (e) { } } if (W.entries) rejudge(); BUSY = false; renderAll(); goTo('outAuthor'); saveState(); }
+async function addProfile(id, k) { k = k == null ? -1 : k; if (BUSY) return; BUSY = true; const S = stOf(k); const ids = S.prof.ids.concat([id]); await loadProfile(S, ids, S.prof.how + '; добавлен профиль ' + id); S.similar = (S.similar || []).filter(a => a.id !== id); if (W.entries) rejudge(); BUSY = false; renderAll(); goTo('outAuthor'); saveState(); }
 async function pickOrcid(orcid, k) { k = k == null ? -1 : k; if (BUSY) return; BUSY = true; const S = stOf(k); S.msgs = []; await byOrcid(S, orcid, 'выбран вручную: ORCID ' + orcid); await afterPick(k); }
 async function pickAuthor(id, k) { k = k == null ? -1 : k; if (BUSY) return; BUSY = true; const S = stOf(k); await loadProfile(S, [id], 'выбран вручную из найденных по имени'); await afterPick(k); }
 
@@ -470,7 +554,7 @@ function profileLinksHtml(S, k) {
   if (L.warns.length) h += `<p>${chip('check', 'проверьте')} ${L.warns.map(esc).join('; ')}.</p>`;
   if (L.ids.length) h += '<table class="t"><tr><th style="width:26%">База</th><th style="width:26%">Идентификатор</th><th>Ссылка</th></tr>' + L.ids.map(x => { const B = BASES[x.b]; return `<tr><td>${esc(B.name)}</td><td title="откуда взят: ${esc(x.src.join(', '))}">${esc(x.v)}</td><td>${lnk(B.url(x.v))}${B.note ? ' <span class="dim">— ' + esc(B.note) + '</span>' : ''}</td></tr>`; }).join('') + '</table>';
   if (L.orcErr) h += `<p class="dim" style="margin-bottom:0">Идентификаторы из записи ORCID не получены: ${esc(L.orcErr)}.</p>`;
-  h += hirschHtml(S, k, L);
+  if (!(S.prof && !S.prof.err)) h += hirschHtml(S, k, L);   // без найденного профиля — прежней строкой, с найденным — плашкой вверху
   return h + ` <p style="margin:6px 0 0"><button class="sec small" onclick="copyLinks(${k})">Скопировать ссылки</button></p></div>`;
 }
 /* ----- Индекс Хирша по базам. Scopus, WoS и РИНЦ открытых интерфейсов не дают — утилита значение не получает, даёт ссылку, где его посмотреть;
@@ -478,7 +562,15 @@ function profileLinksHtml(S, k) {
 const H_BASES = [['scopus', 'Scopus', 'scopus'], ['wos', 'Web of Science', 'rid'], ['rinc', 'РИНЦ (eLibrary)', 'rinc']];
 const H_NOTE = { scopus: 'h-индекс виден в профиле и без подписки (рядом с числом документов)', wos: 'нужен доступ к Web of Science', rinc: '' };
 function hirschLink(L, idb) { const x = L.ids.find(i => i.b === idb); if (x) return { u: BASES[idb].url(x.v), t: 'профиль ' + x.v }; const s = L.sr.find(i => i.b === ({ scopus: 'Scopus', rid: 'Web of Science', rinc: 'eLibrary' })[idb]); return s ? { u: s.u, t: 'поиск автора', q: s.manual ? s.q : '' } : null; }
-/* Правка 5: индекс Хирша — одной компактной строкой вместо таблицы */
+/* Индекс Хирша — заметной плашкой рядом с именем автора (правка 2, 0.7.11): крупно OpenAlex, рядом ссылки Scopus · WoS · РИНЦ */
+function hirschPlate(S, L) {
+  const prof = S.prof, oa = prof.info.filter(a => a.h != null);
+  const links = H_BASES.map(([key, name, idb]) => { const l = hirschLink(L, idb), nm = { scopus: 'Scopus', wos: 'WoS', rinc: 'РИНЦ' }[key]; return l ? `<a target="_blank" rel="noopener" href="${esc(l.u)}" title="${esc((l.q ? 'форма поиска автора' : l.t) + (H_NOTE[key] ? ' — ' + H_NOTE[key] : ''))}">${nm}</a>` : `<span class="dim" title="профиля нет">${nm}</span>`; });
+  return `<div class="hplate" title="OpenAlex считает индекс Хирша по своей базе и с самоцитированием — со Scopus, WoS и РИНЦ не совпадает. Их значений в открытом доступе нет — откройте и посмотрите сами."><div class="hl">Индекс<br>Хирша</div>`
+    + `<div><div class="hv">${oa.length ? oa.map(a => a.h).join(', ') : '—'}</div><div class="dim" style="font-size:11px">OpenAlex, свой расчёт</div></div>`
+    + `<div class="hs">${links.join(' · ')} — посмотреть<div class="dim" style="font-size:11px">открытых значений нет</div></div></div>`;
+}
+/* Правка 5 (0.7.10): индекс Хирша одной строкой — остаётся, когда профиль не найден */
 function hirschHtml(S, k, L) {
   const prof = S.prof && !S.prof.err ? S.prof : null; if (!prof && !L.ids.length) return '';
   const parts = H_BASES.map(([key, name, idb]) => {
@@ -499,35 +591,39 @@ function copyLinks(k) {
 }
 
 const wLink = w => w.doi ? 'https://doi.org/' + w.doi : (w.oaId ? 'https://openalex.org/' + w.oaId : '');
-const profRows = (S, fid) => S.prof.js.filter(x => passFilter(profKey(x), FLT[fid]));
+const profRows = (S, fid) => sortRows(S.prof.js.filter(x => passFilter(profKey(x), FLT[fid])), fid, profKey);
 function aRows() { return profRows(AU, 'au'); }
 /* Тело раздела об одном авторе: сообщения, профили, выбор кандидата, таблица публикаций */
 function authorBody(S, k, fid, withFilter) {
   const prof = S.prof, kk = k < 0 ? '' : ',' + k; let h = '';
+  if (prof && !prof.err) {
+    // шапка автора: имя, организация, число работ — и рядом плашка индекса Хирша
+    h += `<div class="auhead"><div class="auname">${prof.info.map(a => `<div class="nm">${esc(a.name)}</div><div class="dim">${[a.inst ? esc(a.inst) : '', a.works != null ? 'работ в базе: ' + a.works : ''].filter(Boolean).join(' · ')}</div>`).join('')}`
+      + `<div class="dim" style="margin-top:4px" title="Профиль собран базой автоматически: возможны чужие статьи и пропуски">Как найден: ${esc(prof.how)}.${prof.info.length > 1 ? ' Профилей несколько — публикации собраны со всех, проверьте, что это один человек.' : ''}</div></div>${hirschPlate(S, profileLinks(S))}</div>`;
+  }
   if (S.msgs.length) h += `<p>${chip('check', 'обратите внимание')} ${S.msgs.map(esc).join('; ')}.</p>`;
   h += profileLinksHtml(S, k);
   if (prof && prof.err) h += `<p>${chip('unk', 'не загружено')} ${esc(prof.err)}</p>`;
   else if (prof) {
-    h += `<p>${prof.info.map(a => `<b>${esc(a.name)}</b>${a.inst ? ', ' + esc(a.inst) : ''}${a.works != null ? ', работ в базе: ' + a.works : ''}${a.h != null ? ', индекс Хирша по OpenAlex: ' + a.h : ''}`).join('<br>')}</p>`;
-    h += `<p class="dim" title="Профиль собран базой автоматически: возможны чужие статьи и пропуски">Как найден: ${esc(prof.how)}.${prof.info.length > 1 ? ' Профилей несколько — публикации собраны со всех, проверьте, что это один человек.' : ''}</p>`;
     const all = prof.js, rows = profRows(S, fid), cnt = q => rows.filter(x => x.j.sj && x.jv.qY === q).length, wl1 = rows.filter(x => rowKey(x.w.year, x.j, x.jv).wl === 1).length, cy = rows.filter(x => x.corrSt === 'yes').length;
     h += `<p>Источник — ${prof.aw.source}. Статей и обзоров за все годы: <b>${all.length}</b>.` + (prof.aw.capped ? ' Показаны первые 2000 — список обрезан.' : '') + '</p>';
     if (k < 0 && W.entries) { const miss = W.pubs.filter(p => p.work && p.work.doi && TYPE_OK[p.work.type] && !all.some(x => x.w.doi === p.work.doi)); if (miss.length) h += `<p>${chip('check', 'проверьте')} В профиле автора нет ${miss.length} из найденных статей списка (№ ${miss.map(p => numOf(p.entry, W.pubs.indexOf(p))).join(', ')}): профиль в базе неполный либо это другой автор.</p>`; }
     if (withFilter) h += filterBar(fid, rows.length, all.length, noCpdHidden(all.map(profKey), FLT[fid]));
     h += `<div class="sum" title="по показанным строкам; квартиль и уровень — на год публикации">${[['Q1', cnt(1)], ['Q2', cnt(2)], ['Q3', cnt(3)], ['Q4', cnt(4)], ['без квартиля', rows.filter(x => !x.j.sj || !x.jv.qY).length], ['БС 1', wl1], ['corresponding', cy]].map(([t, n]) => `<span class="sb"><b>${n}</b> ${t}</span>`).join('')}</div>`;
-    const listed = new Set(W.entries ? W.pubs.filter(p => p.work).map(p => p.work.doi) : []), orgOn = !!$('org').value.trim();
+    const listed = new Set(W.entries ? W.pubs.filter(p => p.work).map(p => p.work.doi) : []), dn = doneCnt(all.map(markKeyA));
+    if (dn) h += `<p class="dim">Отмечено «проверено»: ${dn} из ${all.length}.</p>`;
     if (!all.length) h += '<p class="dim">Статей нет. Это не значит, что их нет вообще: профиль в базе может быть пустым.</p>';
     else if (!rows.length) h += '<p class="dim">Под фильтр не подходит ни одна статья.</p>';
-    else h += `<table class="t"><tr><th style="width:5%">Год</th><th>Статья и ссылка</th><th style="width:14%">Издание</th><th style="width:11%">Квартиль</th><th style="width:11%">Белый список</th><th style="width:7%">Импакт-фактор<div class="sub">SCImago</div></th><th style="width:9%">Место автора</th><th style="width:10%">Corresponding</th><th style="width:13%">Организация${orgOn ? ' (сверка)' : ''}</th></tr>` + rows.map(x => {
-      const url = wLink(x.w);
-      return `<tr><td>${x.w.year || ''}</td><td>${esc(x.w.title)}${k < 0 && listed.has(x.w.doi) && x.w.doi ? ' ' + nchip('в списке') : ''}${x.w.type === 'review' ? ' <span class="dim">обзор</span>' : ''}<br>${url ? lnk(url) : chip('unk', 'ссылки нет')}</td><td>${esc(x.w.journal)}</td><td>${quartText(x.jv, x.j.sj, true, x.j.wl)}</td><td>${wlText(x.j.wl, x.w.year, true)}</td><td>${x.jv.cpd != null ? fmtNum(x.jv.cpd) : ''}</td><td class="dim">${esc(x.pos || '')}</td><td>${corrChip(x.corrSt, x.corrNames)}</td><td class="dim">${orgHtml(orgOf(x.me))}</td></tr>`;
+    else h += `<table class="t"><tr>${sortTh(fid, 'year', 'Год', 'width:8%')}<th>Статья и ссылка</th><th style="width:16%">Издание</th>${sortTh(fid, 'q', 'Квартиль', 'width:12%')}${sortTh(fid, 'wl', 'Белый список', 'width:12%')}${sortTh(fid, 'if', 'Импакт-фактор<div class="sub">SCImago</div>', 'width:9%')}<th style="width:9%">Место автора</th><th style="width:12%">Corresponding</th></tr>` + rows.map(x => {
+      const url = wLink(x.w), mk = markKeyA(x);
+      return `<tr${MARKS[mk] ? ' class="done"' : ''}><td>${x.w.year || ''}${markBox(mk)}</td><td>${esc(x.w.title)}${k < 0 && listed.has(x.w.doi) && x.w.doi ? ' ' + nchip('в списке') : ''}${x.w.type === 'review' ? ' <span class="dim">обзор</span>' : ''}<br>${url ? lnk(url) : chip('unk', 'ссылки нет')}</td><td>${esc(x.w.journal)}</td><td>${quartText(x.jv, x.j.sj, true, x.j.wl)}</td><td>${wlText(x.j.wl, x.w.year, true)}</td><td>${x.jv.cpd != null ? fmtNum(x.jv.cpd) : ''}</td><td class="dim">${esc(x.pos || '')}</td><td>${corrChip(x.corrSt, x.corrNames)}</td></tr>`;
     }).join('') + '</table>';
   } else if (S.cands || S.orcCands) {
     const c = S.cands || [], o = S.orcCands || [];
     if (c.length || o.length) {
-      h += `<p>${chip('check', 'выберите')} По ФИО однозначно определить автора нельзя — выберите нужного. Сверху — лучше совпавшие: имя полностью, инициал отчества, запись в реестре ORCID.</p>`;
+      h += `<p>${chip('check', 'выберите')} По ФИО однозначно определить автора нельзя — выберите нужного. Сверху — лучше совпавшие: имя полностью, организация, инициал отчества, запись в реестре ORCID.${$('org').value.trim() ? '' : ' Укажите организацию автора — это поможет отличить однофамильцев.'}</p>`;
       if (c.length) h += `<table class="t cands"><tr><th style="width:19%">Имя</th><th style="width:23%">Организация</th><th style="width:20%">Разделы науки<div class="sub">OpenAlex, наведите — тема</div></th><th style="width:6%">Работ</th><th style="width:6%">Хирш<div class="sub">OpenAlex</div></th><th style="width:11%">Совпадения</th><th style="width:15%"></th></tr>` + c.map(a => { const cyr = (a.alt || []).filter(isCyr).sort((x, y) => y.length - x.length)[0];
-        return `<tr><td><b>${esc(a.name)}</b><div>${cyr ? esc(cyr) : '<span class="dim">имени кириллицей в базе нет</span>'}</div></td><td>${a.inst ? esc(a.inst) + '<div>' + (a.instRu ? esc(a.instRu) : '<span class="dim">русского названия в базе нет</span>') + '</div>' : '<span class="dim">не указана</span>'}</td><td>${topicsHtml(a)}</td><td>${a.works}</td><td>${a.h != null ? a.h : ''}</td><td>${[a.fullGiven && nchip('имя'), a.patr && nchip('отчество'), a.inOrcid && nchip('в ORCID'), a.ru && nchip('Россия')].filter(Boolean).join(' ')}</td><td><button class="sec" onclick="pickAuthor('${a.id}'${kk})">Это он</button><div class="dim">${candLinks(a)}</div></td></tr>`; }).join('') + '</table>';
+        return `<tr><td><b>${esc(a.name)}</b><div>${cyr ? esc(cyr) : '<span class="dim">имени кириллицей в базе нет</span>'}</div></td><td>${a.inst ? esc(a.inst) + '<div>' + (a.instRu ? esc(a.instRu) : '<span class="dim">русского названия в базе нет</span>') + '</div>' : '<span class="dim">не указана</span>'}</td><td>${topicsHtml(a)}</td><td>${a.works}</td><td>${a.h != null ? a.h : ''}</td><td>${[a.fullGiven && nchip('имя'), a.org === 'yes' && chip('ok', 'организация совпала'), a.org === 'part' && nchip('организация — частично'), a.patr && nchip('отчество'), a.inOrcid && nchip('в ORCID'), a.ru && nchip('Россия')].filter(Boolean).join(' ')}</td><td><button class="sec" onclick="pickAuthor('${a.id}'${kk})">Это он</button><div class="dim">${candLinks(a)}</div></td></tr>`; }).join('') + '</table>';
       if (o.length) h += `<p class="dim">Найдены в реестре ORCID (в OpenAlex по имени не нашлись):</p><table class="t"><tr><th>Имя в ORCID</th><th style="width:36%">Организации</th><th style="width:18%">ORCID</th><th style="width:15%"></th></tr>` + o.map(a => `<tr><td>${esc(a.name)}</td><td>${esc(a.inst)}</td><td>${lnk('https://orcid.org/' + a.orcid, a.orcid)}</td><td><button class="sec" onclick="pickOrcid('${a.orcid}'${kk})">Это он</button><div class="dim">${lnk(scopusNameUrl(a.name), 'Scopus: поиск по имени')}</div></td></tr>`).join('') + '</table>';
       h += '<p class="dim">Надёжнее всего — ORCID или поиск по статьям из списка: тогда автор определяется без выбора.</p>';
     } else h += `<p>${chip('unk', 'не найден')} По этим сведениям автор в открытых базах не найден. Попробуйте ORCID или сначала найдите публикации из списка.</p>`;
@@ -537,9 +633,9 @@ function authorBody(S, k, fid, withFilter) {
 }
 function renderAuthor() {
   const S = AU;
-  if (!S.prof && !S.cands && !S.orcCands && !S.msgs.length && !S.parsed) { $('outAuthor').innerHTML = ''; $('acopy').style.display = 'none'; return; }
+  if (!S.prof && !S.cands && !S.orcCands && !S.msgs.length && !S.parsed) { $('outAuthor').innerHTML = ''; $('auOut').style.display = 'none'; return; }
   $('outAuthor').innerHTML = '<h2>Автор</h2>' + authorBody(S, -1, 'au', true).replace('<p>Источник —', '<h2 id="auWorks">Все публикации автора</h2><p>Источник —');
-  $('acopy').style.display = S.prof && !S.prof.err ? '' : 'none';
+  $('auOut').style.display = S.prof && !S.prof.err ? '' : 'none';
 }
 
 /* ----- Копирование ----- */
@@ -547,19 +643,22 @@ const tsvRow = a => a.map(x => String(x == null ? '' : x).replace(/[\t\n]/g, ' '
 const wlS = (wl, year) => { if (!wl) return 'нет'; const a = wlAt(wl, year); return (a.excluded ? 'исключён ' + wl.disc : (a.lv ? a.lv + ' (' + a.y + ')' : 'без уровня')) + (!a.excluded && (a.curExcl || a.cur !== a.lv) ? '; сейчас ' + (a.curExcl ? 'исключён' : a.cur || 'без уровня') : ''); };
 const idxS = wl => !wl ? 'нет данных' : ['WoS CC', 'Scopus', 'RSCI'].filter((n, i) => [wl.wos, wl.scopus, wl.rsci][i]).join(', ') || 'ни в одной';
 const corrS = w => !w.oa ? 'нет данных' : (!w.corr || !w.corr.known ? 'в базе не указан' : w.corr.names.join(', '));
-const orgS = me => { const o = orgOf(me); return o.names.join('; ') + (o.st && $('org').value.trim() ? ' [' + ORG_T[o.st] + ']' : ''); };
-function copyList() {
-  if (!W.entries) return; const ids = auIds().length; const L = [tsvRow(['№', 'Найденная статья', 'Ссылка', 'Год', 'Тип', 'Издание', 'ISSN', 'Квартиль (год публикации)', 'Квартиль сейчас (' + REF.sjYear + ')', 'Индексация (Белый список)', 'Белый список (год публикации)', 'Импакт-фактор (SCImago, цит. на документ за 2 года)', 'Импакт-фактор в списке', 'Corresponding (OpenAlex)'].concat(ids ? ['Найденный автор — corresponding', 'Организация автора'] : []).concat(['Первый автор', 'Последний автор', 'Примечания']))];
-  listRows().forEach(({ p, i }) => { const w = p.work, jv = p.jv || {}, a = w ? w.authors : [], m = w ? listMe(w) : null; L.push(tsvRow([numOf(p.entry, i), w ? w.title : 'не найдена', w ? wLink(w) : '', w ? w.year : '', w ? p.typeName : '', w ? w.journal : '', w ? w.issns.join(', ') : '', w && p.j.sj ? (jv.qY ? 'Q' + jv.qY : 'нет') + ' (' + jv.sjYear + ')' : '', w && p.j.sj && jv.qL ? 'Q' + jv.qL : '', w ? idxS(p.j.wl) : '', w ? wlS(p.j.wl, w.year) : '', w && jv.cpd != null ? fmtNum(jv.cpd) : '', p.declIF != null ? fmtNum(p.declIF) : '', w ? corrS(w) : ''].concat(ids ? [m && m.me ? CORR_T[m.corr] : 'нет данных', m && m.me ? orgS(m.me) : ''] : []).concat([aName(a[0]), a.length > 1 ? aName(a[a.length - 1]) : '', p.notes.concat(dupNotes(i)).join('; ')]))); });
-  toClip(L.join('\n'), 'status');
+const orgS = me => orgNames(me).join('; ');
+const markS = k => MARKS[k] ? 'да' : '';
+/* Таблица для копирования и выгрузки файлом: числа — числами (Excel сам покажет их по-русски) */
+function listTable() {
+  const ids = auIds().length; const L = [['№', 'Проверено', 'Найденная статья', 'Ссылка', 'Год', 'Тип', 'Издание', 'ISSN', 'Квартиль (год публикации)', 'Квартиль сейчас (' + REF.sjYear + ')', 'Индексация (Белый список)', 'Белый список (год публикации)', 'Импакт-фактор (SCImago, цит. на документ за 2 года)', 'Импакт-фактор в списке', 'Corresponding (OpenAlex)'].concat(ids ? ['Найденный автор — corresponding', 'Организация автора'] : []).concat(['Первый автор', 'Последний автор', 'Примечания', 'Запись из списка'])];
+  listRows().forEach(({ p, i }) => { const w = p.work, jv = p.jv || {}, a = w ? w.authors : [], m = w ? listMe(w) : null, num = numOf(p.entry, i);
+    L.push([typeof num === 'number' ? num : String(num), markS(markKeyL(p)), w ? w.title : (p.found === 'patent' ? 'патент — не ищется' : (p.found === 'no' ? 'не найдена' : 'не проверена')), w ? wLink(w) : (p.entry.patentNo ? 'https://patents.google.com/patent/' + p.entry.patentNo : ''), w ? w.year : '', w ? p.typeName : (p.found === 'patent' ? 'патент' : ''), w ? w.journal : '', w ? w.issns.join(', ') : '', w && p.j.sj ? (jv.qY ? 'Q' + jv.qY : 'нет') + ' (' + jv.sjYear + ')' : '', w && p.j.sj && jv.qL ? 'Q' + jv.qL : '', w ? idxS(p.j.wl) : '', w ? wlS(p.j.wl, w.year) : '', w && jv.cpd != null ? Math.round(jv.cpd * 100) / 100 : '', p.declIF != null ? p.declIF : '', w ? corrS(w) : ''].concat(ids ? [m && m.me ? CORR_T[m.corr] : 'нет данных', m && m.me ? orgS(m.me) : ''] : []).concat([aName(a[0]), a.length > 1 ? aName(a[a.length - 1]) : '', p.notes.concat(dupNotes(i)).join('; '), p.entry.raw])); });
+  return L;
 }
-const profHead = () => ['Год', 'Статья', 'Ссылка', 'Издание', 'Квартиль (год публикации)', 'Квартиль сейчас (' + REF.sjYear + ')', 'Белый список (год публикации)', 'Импакт-фактор (SCImago)', 'Место автора', 'Corresponding', 'Организация'];
-const profLine = x => [x.w.year, x.w.title, wLink(x.w), x.w.journal, x.j.sj ? (x.jv.qY ? 'Q' + x.jv.qY : 'нет') + ' (' + x.jv.sjYear + ')' : '', x.j.sj && x.jv.qL ? 'Q' + x.jv.qL : '', wlS(x.j.wl, x.w.year), x.jv.cpd != null ? fmtNum(x.jv.cpd) : '', x.pos || '', x.corrSt ? CORR_T[x.corrSt] + (x.corrSt === 'no' && x.corrNames.length ? ' (' + x.corrNames.join(', ') + ')' : '') : 'нет данных', orgS(x.me)];
-function copyAuthor() {
-  if (!AU.prof || AU.prof.err) return; const L = [tsvRow(['Автор', AU.prof.info.map(a => a.name).join('; '), AU.prof.info.map(a => 'https://openalex.org/' + a.id).join(' ')]), tsvRow(profHead())];
-  aRows().forEach(x => L.push(tsvRow(profLine(x))));
-  toClip(L.join('\n'), 'astatus');
-}
+function copyList() { if (!W.entries) return; toClip(listTable().map(r => tsvRow(r.map(cellTxt))).join('\n'), 'status'); }
+function exportList(kind) { if (!W.entries) return; const t = listTable(), nm = 'Публикации_из_списка_' + today(); download(nm + '.' + kind, kind === 'xlsx' ? xlsxBlob('Публикации из списка', t) : csvBlob(t)); $('status').textContent = 'Файл ' + nm + '.' + kind + ' сохранён в папку загрузок.'; }
+const profHead = () => ['Год', 'Проверено', 'Статья', 'Ссылка', 'Издание', 'Квартиль (год публикации)', 'Квартиль сейчас (' + REF.sjYear + ')', 'Белый список (год публикации)', 'Импакт-фактор (SCImago)', 'Место автора', 'Corresponding', 'Организация автора в статье'];
+const profLine = x => [x.w.year, markS(markKeyA(x)), x.w.title, wLink(x.w), x.w.journal, x.j.sj ? (x.jv.qY ? 'Q' + x.jv.qY : 'нет') + ' (' + x.jv.sjYear + ')' : '', x.j.sj && x.jv.qL ? 'Q' + x.jv.qL : '', wlS(x.j.wl, x.w.year), x.jv.cpd != null ? Math.round(x.jv.cpd * 100) / 100 : '', x.pos || '', x.corrSt ? CORR_T[x.corrSt] + (x.corrSt === 'no' && x.corrNames.length ? ' (' + x.corrNames.join(', ') + ')' : '') : 'нет данных', orgS(x.me)];
+function authorTable() { const hs = AU.prof.info.filter(a => a.h != null).map(a => a.h).join(', '); return [['Автор', AU.prof.info.map(a => a.name).join('; '), AU.prof.info.map(a => 'https://openalex.org/' + a.id).join(' '), hs ? 'Индекс Хирша OpenAlex (свой расчёт): ' + hs : ''], profHead()].concat(aRows().map(profLine)); }
+function copyAuthor() { if (!AU.prof || AU.prof.err) return; toClip(authorTable().map(r => tsvRow(r.map(cellTxt))).join('\n'), 'astatus'); }
+function exportAuthor(kind) { if (!AU.prof || AU.prof.err) return; const t = authorTable(), nm = 'Публикации_автора_' + today(); download(nm + '.' + kind, kind === 'xlsx' ? xlsxBlob('Публикации автора', t) : csvBlob(t)); $('astatus').textContent = 'Файл ' + nm + '.' + kind + ' сохранён в папку загрузок.'; }
 function toClip(t, where) {
   const done = () => { $(where).textContent = 'Скопировано — вставьте в таблицу.'; };
   const fb = () => { const a = document.createElement('textarea'); a.value = t; document.body.appendChild(a); a.select(); try { document.execCommand('copy'); done(); } catch (e) { } a.remove(); };
