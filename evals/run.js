@@ -526,6 +526,7 @@ eq('транслит / несколько написаний фамилии', A.
     eq('0.8 Scopus / по EISSN найден, год внутри годов индексации — без пометок', [sc1 && sc1.id, A.scAt(sc1, 2022).inCov, A.scAt(sc1, 2022).notes.length], [99000001, true, 0]);
     eq('0.8 Scopus / год вне годов индексации — «проверьте: не индексировался»', (a => [a.inCov, /не индексировался/.test(a.notes[0] || '')])(A.scAt(sc1, 2025)), [false, true]);
     const sc2 = A.findSc(['3456-7890'])[0];
+    eq('0.8.1 Scopus / действующий журнал с годами «…-2026»: статья 2027 года — без «не индексировался» (список выпущен в 2026)', (a => [a.inCov, a.notes.length])(A.scAt(A.findSc(['0028-0836'])[0], 2027)), [true, 0]);
     eq('0.8 Scopus / исключён: статья позже последнего номера — «проверьте»', (a => [a.afterDisc, /после последнего номера/.test(a.notes.join()), /2020, том 12, выпуск 4/.test(a.notes.join())])(A.scAt(sc2, 2022)), [true, true, true]);
     eq('0.8 Scopus / принят, ещё не загружен', (a => /принят в Scopus 01\.08\.2026/.test(a.notes[0] || ''))(A.scAt(A.findSc(['5678-9012'])[0], 2026)), true);
     { const r = A.judgePub(A.parseEntry('1. Ivanov I.I. Fictional paper on sorbents in cold water. Vymyshlennyi Zhurnal Fiziki. 2025.'), { doi: '10.5555/f1', title: 'Fictional paper on sorbents in cold water', journal: 'Vymyshlennyi Zhurnal Fiziki', issns: ['12345679'], year: 2025, type: 'journal-article', via: 'doi', score: 1 }, {});

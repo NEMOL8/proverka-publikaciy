@@ -68,7 +68,7 @@ const AID = { Sokolova: 'A1', Orlov: 'A2', Lebedev: 'A3' }, ANAME = { A1: 'Anna 
   const idle = () => pg.waitForFunction(() => !BUSY, null, { timeout: 60000 });
   const listState = () => pg.evaluate(() => ({ n: W.pubs.length, found: W.pubs.map(p => p.found), q: W.pubs.map(p => p.jv ? [p.jv.qY, p.jv.sjYear] : null) }));
   const auState = () => pg.evaluate(() => ({ loaded: !!(AU.prof && !AU.prof.err), n: AU.prof && AU.prof.js ? AU.prof.js.length : 0, how: AU.prof && AU.prof.how, cands: AU.cands ? AU.cands.length : null, msgs: AU.msgs, name: AU.prof && AU.prof.info && AU.prof.info[0] && AU.prof.info[0].name }));
-  const out = [], T = (name, ok, got) => out.push(`${ok ? 'верно  ' : 'НЕВЕРНО'} — ${name}${ok ? '' : ': ' + JSON.stringify(got)}`);
+  const out = [], T = (name, ok, got) => { const r = `${ok ? 'верно  ' : 'НЕВЕРНО'} — ${name}${ok ? '' : ': ' + JSON.stringify(got)}`; out.push(r); if (!ok) console.log('  (сразу) ' + r.slice(0, 1500)); };  // провал виден сразу, даже если прогон потом упадёт
   // 0.7.11: кеш ответов и прошлая проверка в браузере мешали бы подставным ответам между сценариями — в основном прогоне выключены
   await pg.addInitScript(() => { try { if (!sessionStorage.getItem('pc_keep')) { localStorage.setItem('pc_useCache', 'false'); localStorage.removeItem('pc_state'); } } catch (e) { } });
   await pg.goto(URL0);
@@ -370,12 +370,12 @@ const AID = { Sokolova: 'A1', Orlov: 'A2', Lebedev: 'A3' }, ANAME = { A1: 'Anna 
     T('0.8 правка 4: страница без Хирша — «не найден на странице», значения не меняются', await pg.evaluate(() => /не найден/.test(document.getElementById('hxPanel').innerText) && AU.hx.length === 3), await pg.evaluate(() => document.getElementById('hxPanel').innerText.slice(0, 300)));
     await pg.unroute(/pub\.orcid\.org/); await pg.route(/pub\.orcid\.org/, r => r.abort());
     await pg.click('#anew'); T('0.8 правка 4: «Найти другого автора» убирает вставленные значения', await pg.evaluate(() => AU.hx.length === 0 && !document.querySelector('.hplate')), ''); }
-  // правка 5: режим «Журнал»
-  { await pg.fill('#jq', 'Nature\n0028-0836\nPhysical Review\nЖурнал вымышленных результатов несуществующих наук'); await pg.fill('#jy', '2023'); await pg.click('#jgo'); await pg.waitForFunction(() => /Готово/.test(document.getElementById('jstatus').textContent));
+  // правка 5: режим «Журнал» («Physical Review» с 0.8.1 однозначен — в списке Scopus есть журнал с таким названием, поэтому похожие — «Mater. Lett.»)
+  { await pg.fill('#jq', 'Nature\n0028-0836\nMater. Lett.\nЖурнал вымышленных результатов несуществующих наук'); await pg.fill('#jy', '2023'); await pg.click('#jgo'); await pg.waitForFunction(() => /Готово/.test(document.getElementById('jstatus').textContent));
     const j = await pg.evaluate(() => { const tr = [...document.querySelectorAll('#outJournal table.t tr')].slice(1).map(r => r.innerText); return { tr, nav: document.getElementById('nav').innerText, st: document.getElementById('jstatus').textContent }; });
     T('0.8 правка 5: журналы — Nature по названию и по ISSN (Q1 на 2023, импакт-фактор, Белый список), похожие — выбор, вымышленный — «не найдено в справочниках»', j.tr.length === 4 && /Q1/.test(j.tr[0]) && /на 2023/.test(j.tr[0]) && /уровень 1/.test(j.tr[0]) && /Q1/.test(j.tr[1]) && /выберите/.test(j.tr[2]) && /не найдено в справочниках/.test(j.tr[3]) && /Журналы\s*4/.test(j.nav), j);
     await pg.click('#outJournal button:has-text("Это он")'); const p3 = await pg.evaluate(() => document.querySelectorAll('#outJournal table.t tr')[3].innerText);
-    T('0.8 правка 5: «Это он» — выбранный журнал показан с квартилем и пометкой о неполном совпадении', /Physical Review/.test(p3) && /Q\d/.test(p3) && /совпало не полностью/.test(p3), p3);
+    T('0.8 правка 5: «Это он» — выбранный журнал показан с квартилем и пометкой о неполном совпадении', /Materials Letters/.test(p3) && /Q\d/.test(p3) && /совпало не полностью/.test(p3), p3);
     const [dl] = await Promise.all([pg.waitForEvent('download'), pg.click('#jxlsx')]); T('0.8 правка 5: «Скачать Excel» для журналов', /^Журналы_.*\.xlsx$/.test(dl.suggestedFilename()), dl.suggestedFilename()); }
   // правка 6: документы — PDF с текстом (список в конце), PDF с таблицей, Word, скан
   { const pd = await br.newPage(); const fio = PUBS.slice(0, 3);

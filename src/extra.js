@@ -26,6 +26,9 @@ function scAt(sc, year) {
   const o = { inCov: null, afterDisc: false, notes: [] };
   if (!sc) return o;
   if (sc.status === 2) { o.notes.push(`журнал принят в Scopus${sc.acc ? ' ' + sc.acc : ''}, но ещё не загружен в базу — проверьте`); return o; }
+  // у действующего журнала последние годы индексации — год выпуска списка: более поздняя статья ещё не могла попасть в список, это не «не индексировался»
+  const listY = +(String(REF.scDate || '').match(/\d{4}/) || [])[0] || new Date().getFullYear(), lastEnd = sc.cov.length ? sc.cov[sc.cov.length - 1][1] : 0;
+  if (year && sc.cov.length && sc.status === 1 && year > lastEnd && lastEnd >= listY - 1) { o.inCov = true; return o; }
   if (year && sc.cov.length) { o.inCov = sc.cov.some(([a, b]) => year >= a && year <= b); if (!o.inCov) o.notes.push(`проверьте: в ${year} году журнал в Scopus не индексировался (годы в Scopus: ${sc.covText})`); }
   if (sc.disc && sc.disc.year && year && year > sc.disc.year) { o.afterDisc = true; o.notes.push(`проверьте: статья вышла после последнего номера, проиндексированного Scopus (${scDiscText(sc.disc)})`); }
   return o;

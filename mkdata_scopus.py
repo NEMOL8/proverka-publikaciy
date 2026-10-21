@@ -16,8 +16,8 @@ def sheet(*pats):
     return None
 def rows(ws):
     it = ws.iter_rows(values_only=True); head = None
-    for r in it:  # строка заголовков — первая, где есть «Title»/«ISSN»
-        if r and any(isinstance(c, str) and re.search(r'title|issn', c, re.I) for c in r): head = [str(c or '').strip() for c in r]; break
+    for r in it:  # строка заголовков — первая, где есть ячейка ровно «ISSN» (выше бывают строки «Status…», «Notice…»)
+        if r and any(isinstance(c, str) and c.strip().upper() == 'ISSN' for c in r): head = [str(c or '').strip() for c in r]; break
     return head, it
 def col(head, *pats, need=True, name=''):
     for p in pats:
@@ -50,13 +50,14 @@ ws = sheet(r'discontinued')
 n_disc = 0
 if ws is not None:
     head, it = rows(ws)
-    dT = col(head, r'title', name='Title'); dP = col(head, r'^issn', name='ISSN', need=False); dE = col(head, r'e-?issn', name='EISSN', need=False)
+    dI = col(head, r'^sourcerecord id', r'source\s*id', name='Sourcerecord ID', need=False); dT = col(head, r'title', name='Title'); dP = col(head, r'^issn', name='ISSN', need=False); dE = col(head, r'e-?issn', name='EISSN', need=False)
     dY = col(head, r'year', name='год последнего номера', need=False); dV = col(head, r'vol', name='том', need=False); dS = col(head, r'issue', name='выпуск', need=False)
-    dR = col(head, r'reason|type|discontinu.*(due|for)', name='причина', need=False)
+    dR = col(head, r'indexation change', r'reason', r'discontinu.*(due|for)', name='причина', need=False)
     for r in it:
         if not r or r[dT] is None: continue
         isn = [x for x in [iss(r[dP]) if dP is not None else '', iss(r[dE]) if dE is not None else ''] if len(x) == 8]
-        key = next((by_issn[x] for x in isn if x in by_issn), None)
+        sid = num(r[dI]) if dI is not None else None
+        key = sid if sid in out else next((by_issn[x] for x in isn if x in by_issn), None)
         if key is None: key = ' '.join(isn) + '|' + txt(r[dT]); out[key] = [txt(r[dT]), ' '.join(isn), None, 0, '', 1, None, '', '', '', '']
         rec = out[key]; rec[5] = 1
         if dY is not None: rec[6] = num(r[dY])
