@@ -7,3 +7,5 @@ evals/*.txt
 evals/*.jpg
 evals/*.xlsx
 evals/*.csv
+evals/*.pdf
+evals/*.docx

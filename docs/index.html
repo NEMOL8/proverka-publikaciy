@@ -88,6 +88,11 @@ tr.done>td{background:#f1f8f1}td .mk{display:block;margin-top:4px;font-size:11.5
 body.dragging main{outline:3px dashed var(--acc);outline-offset:-6px}
 .prog{display:inline-block;width:160px;height:8px;background:var(--accbg);border:1px solid var(--beige);vertical-align:middle;margin:0 8px}.prog>span{display:block;height:100%;background:var(--acc)}
 .nchips .chip{margin:0 3px 3px 0}
+/* 0.8: найденные в документе записи, журналы */
+.docbox{margin:8px 0;padding:8px 10px;background:#fff;border:1px solid var(--beige)}
+.docbox table.t td{padding:3px 5px}.docbox textarea{min-height:44px}
+#outJournal>h2{border-left:4px solid var(--beige);padding-left:8px}
+.hplate{flex-wrap:wrap}
 </style></head><body><main>
 <header class="top"><div><h1>Публикации: квартиль, Белый список, импакт-фактор, авторы</h1>
 <div class="dim"><span id="ver"></span>. <span id="refinfo"></span></div></div></header>
@@ -104,11 +109,14 @@ body.dragging main{outline:3px dashed var(--acc);outline-offset:-6px}
 <li>Ctrl+Enter в поле списка — найти публикации; снимок можно вставить Ctrl+V или перетащить в любое место страницы. Прошлая проверка сохраняется в браузере — при следующем открытии её можно продолжить.</li>
 <li>Пометки: <span class="chip ok">да</span> — подтверждено базой; <span class="chip check">проверьте</span> — источники расходятся или совпадение неполное, решите сами; <span class="chip unk">не указан / не найдено</span> — утилита этого не знает, это <b>не</b> означает несоответствие; <span class="chip no">нет</span> — база отвечает «нет»; <span class="chip n">Q1</span> — просто значение.</li>
 <li>Импакт-фактор в таблицах — «цитирований на документ за 2 года» SCImago: близок к импакт-фактору, но не равен импакт-фактору WoS. Квартиль WoS, CiteScore и индекс Хирша Scopus, WoS, РИНЦ открытых источников не имеют — утилита даёт ссылки, где посмотреть. Corresponding author — как отмечено в OpenAlex; если не отмечен, никто не подставляется.</li>
+<li><b>Документ</b> (PDF или Word) можно загрузить в раздел 1: утилита найдёт в нём раздел со списком публикаций (или таблицу публикаций), покажет найденные записи — уберите лишние и нажмите «Проверить отмеченные». Квартиль и импакт-фактор, указанные в документе, показываются рядом с найденными утилитой («в списке: …»).</li>
+<li><b>Журнал</b> (раздел 3): название или ISSN, по одному в строке — квартиль SCImago, импакт-фактор, уровень Белого списка и индексация, сейчас и по годам.</li>
+<li><b>Индекс Хирша</b>: крупно — наибольшее из полученных значений с подписью базы. OpenAlex — сам; РИНЦ, Scopus, Web of Science, Google Scholar — откройте профиль по ссылке, скопируйте страницу и нажмите «вставить страницу профиля».</li>
 <li>Если что-то не находится — «Связь и настройки» → «Проверить связь».</li>
 </ol>
 </details>
 <details><summary>Что нового</summary><div id="changes"></div></details>
-<details><summary>Что уходит в интернет</summary><p>Текст каждой записи списка (авторы, название статьи, издание) — в открытые базы Crossref и, если там не нашлось, OpenAlex; DOI найденной статьи и сведения об авторе, которые вы ввели (ФИО, ORCID, Scopus ID, ResearcherID), — в OpenAlex и в реестр ORCID; ISSN издания — на сайт Белого списка. Организация автора никуда не отправляется: по ней на этом компьютере выбирается нужный человек среди найденных. Сами снимки не отправляются: текст с них распознаётся на этом компьютере. Квартиль, импакт-фактор и Белый список берутся из справочников внутри страницы. Последняя проверка, отметки «проверено» и кеш ответов баз хранятся только в этом браузере.</p></details>
+<details><summary>Что уходит в интернет</summary><p>Текст каждой записи списка (авторы, название статьи, издание) — в открытые базы Crossref и, если там не нашлось, OpenAlex; DOI найденной статьи и сведения об авторе, которые вы ввели (ФИО, ORCID, Scopus ID, ResearcherID), — в OpenAlex и в реестр ORCID; ISSN издания — на сайт Белого списка. Организация автора никуда не отправляется: по ней на этом компьютере выбирается нужный человек среди найденных. Сами снимки не отправляются: текст с них распознаётся на этом компьютере. Загруженный документ (PDF, Word) и вставленная страница профиля автора тоже читаются на этом компьютере и никуда не отправляются; в базы уходит только текст найденных в документе записей — как при обычной проверке списка. Поиск журнала — только по справочникам внутри страницы. Квартиль, импакт-фактор и Белый список берутся из справочников внутри страницы. Последняя проверка, отметки «проверено» и кеш ответов баз хранятся только в этом браузере.</p></details>
 <details><summary>Связь и настройки</summary>
 <p><button id="ping" class="sec">Проверить связь</button> <button id="self" class="sec">Самопроверка на известных статьях</button></p><div id="pingres"></div><div id="selfres"></div>
 <p><label style="font-weight:400"><input type="checkbox" id="useWL" checked> Сверять уровень издания с сайтом Белого списка</label></p>
@@ -122,9 +130,10 @@ body.dragging main{outline:3px dashed var(--acc);outline-offset:-6px}
 <div id="inp" class="card noprint">
 <h2 style="margin-top:0">1. Список публикаций</h2>
 <div id="drop">Вставьте снимок (Ctrl+V), перетащите его сюда или <input type="file" id="file" accept="image/*" multiple> — либо вставьте список текстом ниже.
+<div style="margin-top:4px"><b>Документ PDF или Word</b> — утилита сама найдёт в нём список публикаций: <input type="file" id="dfile" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"> <span class="dim">(или перетащите файл сюда; документ читается на этом компьютере и никуда не отправляется)</span></div>
 <div class="dim">eLibrary: список публикаций на странице можно выделить мышью и скопировать — текстом точнее, чем снимком.</div>
 <details class="mini"><summary>как сделать снимок получше</summary><span class="dim">Точнее всего — текст, скопированный из Word, PDF или со страницы базы. Снимок — крупный и резкий (шириной от 1200 точек), без обрезанных краёв: мелкий шрифт распознаётся с ошибками (особенно DOI и годы). Увеличьте страницу в браузере (Ctrl и «+») перед снимком. Снимок страницы базы можно делать целиком: кнопки и пагинация отбрасываются сами.</span></details></div>
-<div id="ocrmsg" class="dim"></div><div id="ocrwarn"></div>
+<div id="ocrmsg" class="dim"></div><div id="ocrwarn"></div><div id="docOut" style="display:none"></div>
 <textarea id="list" placeholder="1. Авторы. Название статьи. Год. Издание&#10;2. …&#10;&#10;Ctrl+Enter — найти публикации"></textarea>
 <div id="cnt" class="dim"></div>
 <p><button id="go">Найти публикации</button> <button id="stop" class="sec" style="display:none">Остановить</button> <button id="retry" class="sec" style="display:none">Повторить ненайденные</button> <span id="status" class="dim"></span></p>
@@ -140,10 +149,18 @@ body.dragging main{outline:3px dashed var(--acc);outline-offset:-6px}
 <p><button id="ago">Найти автора</button> <button id="anew" class="sec">Найти другого автора</button> <span id="astatus" class="dim"></span></p>
 <p id="auOut" style="display:none;margin:0"><button id="acopy" class="sec small">Скопировать публикации автора</button> <button id="axlsx" class="sec small">Скачать Excel</button> <button id="acsv" class="sec small">CSV</button> <button class="sec small" onclick="printPage()">Печать / PDF</button></p>
 </div>
+<div class="card noprint">
+<h2 style="margin-top:0">3. Журнал: квартиль и импакт-фактор</h2>
+<div class="row"><div style="flex:4 1 380px"><label for="jq">Название журнала или ISSN — по одному в строке</label><textarea id="jq" style="min-height:70px" placeholder="Nature&#10;0028-0836&#10;Журнал технической физики&#10;Phys. Rev. B&#10;&#10;Ctrl+Enter — найти"></textarea><div class="dim">Ищется во встроенных справочниках (SCImago, Белый список<span id="jsc"></span>) — без интернета. Название можно с опечатками и сокращениями; ISSN — надёжнее.</div></div>
+<div style="flex:1 1 150px"><label for="jy">Год <span style="font-weight:400">(необязательно)</span></label><input type="number" id="jy" min="1999" max="2100" placeholder="например, 2023"><div class="dim">Квартиль и уровень Белого списка — на этот год.</div></div></div>
+<p><button id="jgo">Найти журналы</button> <span id="jstatus" class="dim"></span></p>
+<p id="jOut" style="display:none;margin:0"><button id="jcopy" class="sec small">Скопировать таблицу</button> <button id="jxlsx" class="sec small">Скачать Excel</button> <button id="jcsv" class="sec small">CSV</button> <button class="sec small" onclick="printPage()">Печать / PDF</button></p>
+</div>
 <div id="outList" class="scroll"></div>
 <div id="outAuthor" class="scroll"></div>
+<div id="outJournal" class="scroll"></div>
 </main>
 <button id="toinp" class="sec noprint" onclick="goTo('inp')">↑ К вводу</button>
 <script>window.PC_SITE = true;</script>
-<script src="app.js?v=0.7.11"></script>
+<script src="app.js?v=0.8"></script>
 </body></html>

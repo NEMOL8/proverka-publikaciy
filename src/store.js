@@ -10,9 +10,10 @@ const LS = {
 function stateNow(withProfile) {
   const au = Object.assign({}, AU);
   if (au.prof && !au.prof.err) au.prof = withProfile ? { aw: au.prof.aw, ids: au.prof.ids, how: au.prof.how, info: au.prof.info } : null;
-  return { v: 1, t: Date.now(), list: $('list').value, author: $('author').value, org: $('org').value,
+  return { v: 1, t: Date.now(), list: $('list').value, author: $('author').value,
     W: W.entries ? { entries: W.entries, works: W.works.map(w => w === undefined ? '__u' : w), netDown: W.netDown, auto: W.auto, numbered: W.numbered, stopped: !!W.stopped } : null,
-    AU: au.prof || au.cands || au.orcCands || au.parsed ? au : null, FLT, SORT };
+    AU: au.prof || au.cands || au.orcCands || au.parsed ? au : null, FLT, SORT,
+    J: JR.rows.length ? { q: $('jq').value, year: JR.year, picks: JR.rows.map(r => r.pick) } : null };
 }
 let _saveT = null;
 function saveState(soon) {
@@ -22,9 +23,9 @@ function saveState(soon) {
 }
 let RESTORE_PENDING = false;
 function offerRestore() {
-  const st = LS.get('pc_state'); if (!st || (!st.W && !st.AU)) return;
+  const st = LS.get('pc_state'); if (!st || (!st.W && !st.AU && !st.J)) return;
   const d = new Date(st.t), when = d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-  const what = [st.W ? 'публикаций в списке: ' + st.W.entries.length : '', st.AU && st.AU.prof && st.AU.prof.info ? 'автор ' + ((st.AU.prof.info[0] || {}).name || '') : (st.author ? 'автор «' + st.author + '»' : '')].filter(Boolean).join(', ');
+  const what = [st.W ? 'публикаций в списке: ' + st.W.entries.length : '', st.J ? 'журналов: ' + st.J.picks.length : '', st.AU && st.AU.prof && st.AU.prof.info ? 'автор ' + ((st.AU.prof.info[0] || {}).name || '') : (st.author ? 'автор «' + st.author + '»' : '')].filter(Boolean).join(', ');
   RESTORE_PENDING = true;
   const b = $('resume'); b.style.display = 'flex';
   b.innerHTML = `<b>Прошлая проверка от ${esc(when)}</b><span class="dim">${esc(what)}</span><button id="resYes">Продолжить прошлую проверку</button><button id="resNo" class="sec">Начать заново</button>`;
@@ -32,14 +33,15 @@ function offerRestore() {
   $('resNo').onclick = () => { RESTORE_PENDING = false; b.style.display = 'none'; LS.del('pc_state'); };
 }
 function restoreState(st) {
-  $('list').value = st.list || ''; $('author').value = st.author || ''; if (st.org != null) $('org').value = st.org; countEntries(); showParsed();
+  $('list').value = st.list || ''; $('author').value = st.author || ''; $('org').value = ''; countEntries(); showParsed();  // организация не возвращается (правка 1, 0.8)
   if (st.FLT) { FLT.list = Object.assign(FLT0(), st.FLT.list); FLT.au = Object.assign(FLT0(), st.FLT.au); }
   if (st.SORT) Object.assign(SORT, st.SORT);
   AU = newS();
   if (st.AU) { AU = Object.assign(newS(), st.AU); if (AU.prof && !AU.prof.err && AU.prof.aw) AU.prof.js = AU.prof.aw.works.map(w => judgeProfileWork(w, AU.prof.ids)); }
   if (st.profDropped && $('author').value.trim()) AU.msgs = (AU.msgs || []).concat(['публикации автора не поместились в память браузера — нажмите «Найти автора» (ответы баз возьмутся из кеша)']);
   if (st.W) { W.entries = st.W.entries; W.works = st.W.works.map(w => w === '__u' ? undefined : w); W.netDown = st.W.netDown; W.auto = st.W.auto; W.numbered = st.W.numbered; W.stopped = st.W.stopped; rejudge(); }
-  renderAll(); retryVis(); goTo(W.entries ? 'outList' : 'outAuthor');
+  if (st.J) { $('jq').value = st.J.q || ''; $('jy').value = st.J.year || ''; JR.year = st.J.year || null; JR.rows = $('jq').value.split('\n').map(s => s.trim()).filter(Boolean).slice(0, 300).map((q, i) => { const res = findJournalQuery(q); const pk = st.J.picks[i]; return { q, res, pick: pk != null && res.hits[pk] ? pk : (res.sure ? res.hits.indexOf(res.sure) : null) }; }); }
+  renderAll(); retryVis(); goTo(W.entries ? 'outList' : (st.AU ? 'outAuthor' : 'outJournal'));
 }
 
 /* ----- 10. Отметка «проверено» по строке ----- */

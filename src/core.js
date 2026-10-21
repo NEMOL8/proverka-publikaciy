@@ -1,7 +1,14 @@
 /* ===== Проверка публикаций: правила (без сети, без ИИ) ===== */
-const VERSION = '0.7.11', VERSION_DATE = '19.10.2026';
+const VERSION = '0.8', VERSION_DATE = '21.10.2026';
 /* Что нового — показывается на странице */
 const CHANGES = [
+  ['0.8', '21.10.2026', ['Новый раздел «Журнал»: название или ISSN (по одному в строке) — квартиль SCImago, импакт-фактор, уровень Белого списка и индексация, сейчас, на указанный год и по годам. Название можно с опечатками и сокращениями.',
+    'Документ PDF или Word: утилита сама находит в нём список или таблицу публикаций, показывает найденные записи (можно убрать лишние и поправить) и проверяет их. Сканы внутри PDF распознаются. Документ никуда не отправляется.',
+    'Квартиль и импакт-фактор, указанные в списке или документе, показываются рядом с найденными («в списке: Q1»).',
+    'Индекс Хирша: крупно — наибольшее из полученных значений с подписью базы. РИНЦ, Scopus, Web of Science, Google Scholar — «вставить страницу профиля» (текст или снимок): утилита сама находит на ней индекс. Где не получен — ссылка посмотреть; поиск в интернете.',
+    'Ссылки на профили Scopus, Web of Science и eLibrary — прямые, если идентификатор есть в OpenAlex или ORCID (в том числе в ссылках профиля ORCID); расхождение — «проверьте».',
+    'Список источников Scopus: индексируется ли издание, годы, исключено ли — появится, когда будет собран справочник.',
+    'Организация автора больше не запоминается: «Найти другого автора» и новое открытие страницы начинают с пустого поля.']],
   ['0.7.11', '19.10.2026', ['Организация автора — открытое поле рядом с ФИО: по ней выбирается нужный человек среди однофамильцев (совпала у одного с полным именем — выбран сам; у кандидатов пометка «организация совпала»). Сверка организации по каждой статье и фильтр «Организация» убраны; организация в статье показывается просто как факт.',
     'Индекс Хирша — заметной плашкой рядом с именем автора: крупно значение OpenAlex, рядом ссылки Scopus · WoS · РИНЦ.',
     'Снимки eLibrary: перед распознаванием снимок обрабатывается (синий и фиолетовый текст на сером становится чёрным, контраст, резкость), каждая строка читается русской и английской моделью; разбор списка eLibrary по настоящему виду страницы; «В сборнике: …» не попадает в поиск статьи; патенты помечаются «патент — не ищется». Плохо распознанный снимок не вставляется молча — крупное предупреждение и кнопка «Всё равно вставить».',
@@ -68,6 +75,7 @@ function loadRef(data) {
   const put = (m, k, i) => { if (!k) return; const a = m.get(k); if (a) { if (a.indexOf(i) < 0) a.push(i); } else m.set(k, [i]); };
   data.sj.forEach((r, i) => { r[1].split(' ').forEach(x => put(R.sjIssn, x, i)); put(R.sjTitle, norm(r[0]), i); });
   data.wl.forEach((r, i) => { r[1].split(' ').forEach(x => put(R.wlIssn, x, i)); r[0].split(' | ').forEach(t => put(R.wlTitle, norm(t), i)); });
+  if (data.sc && typeof loadSc === 'function') loadSc(R, data.sc);  // справочник Scopus (0.8), если собран
   REF = R; return R;
 }
 const SJ_TYPE = ['журнал', 'книжная серия', 'труды конференций', 'отраслевой журнал'];
@@ -101,6 +109,7 @@ function findJournal(issns, title) {
   };
   [out.sj, out.sjHow] = by(REF.sjIssn, REF.sjTitle, sjRec);
   [out.wl, out.wlHow] = by(REF.wlIssn, REF.wlTitle, wlRec);
+  if (typeof findSc === 'function') [out.sc, out.scHow] = findSc(issns, title);  // Scopus Source List (0.8)
   return out;
 }
 
@@ -285,6 +294,8 @@ function parseEntry(raw) {
   const dd = findDoi(t); if (dd) { e.doi = dd.doi; t = t.replace(dd.raw, ' '); }
   let q = t.replace(/https?:\/\/\S+/g, ' ').replace(DOI_RE, ' ').replace(/\bdoi\s*:\s*/gi, ' ');
   // заявленный импакт-фактор: число с дробной частью в конце записи или после «IF / импакт-фактор»
+  // заявленный квартиль («Q1», «Квартиль: Q2») — показывается рядом с найденным (0.8)
+  m = q.match(/(?:квартиль\s*:?\s*)?(?<![\w/.])Q\s?([1-4])(?!\w|\.\d)/i); if (m) { e.declQ = +m[1]; q = q.replace(m[0], ' '); }
   m = q.match(/(?:\bIF\b|импакт[\s-]*фактор)\s*[:=–—-]?\s*(\d{1,3}(?:[.,]\d{1,3})?)/i);
   if (m) { e.declIF = parseFloat(m[1].replace(',', '.')); q = q.replace(m[0], ' '); }
   else { m = q.match(/[\s|;,(]\(?(\d{1,3}[.,]\d{1,3})\)?\s*[|.]?\s*$/); if (m) { e.declIF = parseFloat(m[1].replace(',', '.')); q = q.slice(0, m.index); } }
@@ -519,6 +530,7 @@ function journalVerdict(j, year, live, oaCpd) {
     const b = live.found ? JSON.stringify([live.levels[2023] || 0, live.levels[2025] || 0, live.levels[2026] || 0, live.state === 2]) : 'нет';
     if (a !== b) { o.wlDiff = true; o.notes.push(`сайт Белого списка отвечает иначе, чем справочник от ${REF.wlDate}: на сайте — ` + (live.found ? lvStr(live.levels) + (live.state === 2 ? `, исключён ${live.disc || ''}` : '') : 'издания нет') + '; проверьте'); }
   }
+  if (j.sc) { o.sc = j.sc; const a = scAt(j.sc, year); o.scIn = a.inCov; o.notes.push(...a.notes); if (!sj) o.notes.push('в Scopus есть, квартиля SCImago нет'); }
   if (oaCpd != null) o.oaCpd = oaCpd;
   return o;
 }
@@ -547,6 +559,7 @@ function judgePub(entry, work, opt) {
   if (work.type) r.typeName = TYPE_OK[work.type] || TYPE_RU[work.type] || work.type;
   r.j = findJournal(work.issns, work.journal); r.jv = journalVerdict(r.j, work.year, work.wlLive || null, work.oaCpd != null ? work.oaCpd : null);
   r.notes.push(...r.jv.notes);
+  if (entry.declQ != null) r.declQ = entry.declQ;
   if (entry.declIF != null) {
     r.declIF = entry.declIF;
     if (r.jv.cpd != null) { const d = Math.abs(entry.declIF - r.jv.cpd), big = d > Math.max(1.5, 0.35 * r.jv.cpd); r.ifDiff = big; if (big) r.notes.push(`в списке ${fmtNum(entry.declIF)}, а «цитирований на документ» SCImago ${fmtNum(r.jv.cpd)} — это разные показатели (в списке обычно импакт-фактор WoS), сверьте на сайте журнала`); }

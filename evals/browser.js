@@ -332,6 +332,83 @@ const AID = { Sokolova: 'A1', Orlov: 'A2', Lebedev: 'A3' }, ANAME = { A1: 'Anna 
     T('0.7.11 нечитаемый снимок: крупное «распознан плохо», в список ничего не вставлено, есть «Всё равно вставить»', /распознан плохо/.test(gb.warn) && gb.list.trim() === '' && gb.btn, gb);
     await pg.click('#ocrwarn button'); T('0.7.11 «Всё равно вставить» — текст вставлен, предупреждение убрано', await pg.evaluate(() => document.getElementById('ocrwarn').innerText === ''), await pg.evaluate(() => document.getElementById('list').value.length));
     await pg.fill('#list', ''); }
+  // ===== 0.8: правки 1–6 (ожидания записаны до прогона; всё вымышлено, кроме названий и ISSN настоящих изданий) =====
+  await pg.goto(URL0); MODE = 'none';
+  // правка 1: организация не хранится между сеансами, «Найти другого автора» её очищает, «Продолжить прошлую проверку» её не возвращает
+  { await pg.fill('#org', 'Test University'); await pg.dispatchEvent('#org', 'input'); await pg.dispatchEvent('#org', 'change');
+    const ls = await pg.evaluate(() => localStorage.getItem('pc_org')); await pg.click('#anew'); const f1 = await pg.inputValue('#org');
+    T('0.8 правка 1: организация не пишется в браузер, «Найти другого автора» очищает поле организации', ls === null && f1 === '', [ls, f1]);
+    await pg.fill('#org', 'Test University'); await pg.fill('#list', '1. Sokolova A.V., Orlov D.K. Alginate sorbents for oil spill response in cold seawater. 2023. Nature.'); await runL(); await pg.waitForTimeout(900);
+    await pg.evaluate(() => sessionStorage.setItem('pc_keep', '1')); await pg.reload(); await pg.waitForFunction(() => REF && document.getElementById('resume').style.display !== 'none', null, { timeout: 30000 });
+    const f2 = await pg.inputValue('#org'); await pg.click('#resYes'); const f3 = await pg.inputValue('#org'); const st = await pg.evaluate(() => JSON.parse(localStorage.getItem('pc_state') || '{}').org);
+    T('0.8 правка 1: после перезагрузки поле организации пустое, «Продолжить прошлую проверку» её не возвращает и не хранит', f2 === '' && f3 === '' && st === undefined, [f2, f3, st]);
+    await pg.evaluate(() => sessionStorage.removeItem('pc_keep')); }
+  // правка 3: справочник Scopus в строке списка (вымышленная строка списка источников подставлена в справочник страницы; Nature — настоящий ISSN)
+  { await pg.evaluate(() => { loadSc(REF, { date: 'Sep 2026', rows: [['Nature', '00280836 14764687', 21206, 1, '1869-ongoing']] }); });
+    await pg.fill('#list', '1. Sokolova A.V., Orlov D.K. Alginate sorbents for oil spill response in cold seawater. 2023. Nature. Q1. 64,8'); await runL();
+    const r = await pg.evaluate(() => { const tr = document.querySelectorAll('#outList table.t tr')[1]; return { idx: tr.children[2].innerText, link: [...tr.children[2].querySelectorAll('a')].map(a => a.href).join(' '), q: tr.children[3].innerText, ifc: tr.children[5].innerText, tab: listTable()[0].indexOf('Scopus (список источников)') >= 0 }; });
+    T('0.8 правка 3: у издания — «Scopus: индексируется» и ссылка на страницу издания в Scopus по ID; столбец Scopus в выгрузке', /Scopus: индексируется/.test(r.idx) && /scopus\.com\/sourceid\/21206/.test(r.link) && r.tab, r);
+    T('0.8 правка 6: квартиль и импакт-фактор из списка — рядом с найденными («в списке: Q1», «в списке: 64,8»)', /в списке: Q1/.test(r.q) && /в списке: 64,8/.test(r.ifc), r);
+    await pg.evaluate(() => { delete REF.sc; delete REF._ji; }); }
+  // правки 2 и 4: прямые ссылки на профили и индекс Хирша из нескольких баз (реестр ORCID снова отвечает — выше он был отключён)
+  await pg.unroute(/pub\.orcid\.org/); await pg.route(/pub\.orcid\.org/, route => { const u = decodeURIComponent(route.request().url()); hits.push(u);
+    if (/\/external-identifiers/.test(u)) return json(route, { 'external-identifier': [{ 'external-id-type': 'Scopus Author ID', 'external-id-value': '57000000000' }, { 'external-id-type': 'ResearcherID', 'external-id-value': 'AAA-1234-2020' }] });
+    json(route, { 'expanded-result': null, 'num-found': 0 }); });
+  await pg.goto(URL0); MODE = 'many'; await pg.fill('#author', '0000-0002-1825-0097'); await pg.click('#ago'); await idle();
+  { const hp = await pg.evaluate(() => { const p = document.querySelector('.hplate'); return { txt: p.innerText, links: [...p.querySelectorAll('a')].map(a => ({ h: a.href, t: a.title, x: a.textContent })) }; });
+    const sc = hp.links.find(l => l.x === 'Scopus'), wos = hp.links.find(l => l.x === 'WoS'), rinc = hp.links.find(l => l.x === 'РИНЦ');
+    T('0.8 правка 2: Scopus и WoS — прямые ссылки на профиль по идентификаторам из ORCID (источник в подсказке), РИНЦ — поиск', !!sc && /authorId=57000000000/.test(sc.h) && /из ORCID/.test(sc.t) && !!wos && /rid\/AAA-1234-2020/i.test(wos.h) && !!rinc && /elibrary\.ru\/authors\.asp/.test(rinc.h), hp.links);
+    T('0.8 правка 4: без вставленных страниц — OpenAlex крупно с подписью, «Хирш не получен, посмотреть», поиск в интернете', /OpenAlex, свой расчёт/.test(hp.txt) && /Хирш не получен/.test(hp.txt) && hp.links.some(l => /yandex\.ru\/search/.test(l.h) && /%D0%B8%D0%BD%D0%B4%D0%B5%D0%BA%D1%81/.test(l.h)), hp); }
+  { await pg.evaluate(() => hxToggle()); await pg.fill('#hxText', 'Соколова Анна Викторовна\nВымышленный университет\nSPIN-код: 1234-5678, AuthorID: 765432\nЧисло публикаций на elibrary.ru\t40\nИндекс Хирша по всем публикациям на elibrary.ru\t9\nИндекс Хирша по публикациям в РИНЦ\t7\nИндекс Хирша по ядру РИНЦ\t2'); await pg.click('#hxPanel button:has-text("Найти индекс Хирша")');
+    const a1 = await pg.evaluate(() => ({ hv: document.querySelector('.hplate .hv').innerText, lab: document.querySelector('.hplate .hv').nextElementSibling.innerText, txt: document.querySelector('.hplate').innerText, panel: document.getElementById('hxPanel').innerText, saved: (JSON.parse(localStorage.getItem('pc_state') || '{}').AU || {}).hx }));
+    T('0.8 правка 4: вставлена страница eLibrary — крупно 7 «РИНЦ», OpenAlex 3 рядом, РИНЦ больше не в «не получен»; значение сохраняется', a1.hv === '7' && /РИНЦ/.test(a1.lab) && /OpenAlex 3/.test(a1.txt) && !/РИНЦ[^\n]*Хирш не получен/.test(a1.txt.replace(/Scopus · WoS/, '')) && a1.saved && a1.saved.length === 1, a1);
+    await pg.fill('#hxText', 'Sokolova, Anna V.\nAuthor ID: 57000000000\n56\nDocuments\n12\nh-index\nView h-graph'); await pg.click('#hxPanel button:has-text("Найти индекс Хирша")');
+    await pg.fill('#hxText', 'Sokolova, Anna\nAuthor ID: 57000000009\n10\nDocuments\n14\nh-index'); await pg.click('#hxPanel button:has-text("Найти индекс Хирша")');
+    const a2 = await pg.evaluate(() => ({ hv: document.querySelector('.hplate .hv').innerText, lab: document.querySelector('.hplate .hv').nextElementSibling.innerText, txt: document.querySelector('.auhead').innerText, tab: authorTable()[0][3] }));
+    T('0.8 правка 4: два профиля Scopus (12 и 14) — крупно 14 «Scopus», «несколько профилей — проверьте», все значения в выгрузке', a2.hv === '14' && /Scopus/.test(a2.lab) && /несколько профилей/.test(a2.txt) && /РИНЦ: 7/.test(a2.tab) && /наибольший — 14 \(Scopus\)/.test(a2.tab), a2);
+    await pg.fill('#hxText', 'Scopus author profile\nAuthor ID: 57000000000\nDocuments 56'); await pg.click('#hxPanel button:has-text("Найти индекс Хирша")');
+    T('0.8 правка 4: страница без Хирша — «не найден на странице», значения не меняются', await pg.evaluate(() => /не найден/.test(document.getElementById('hxPanel').innerText) && AU.hx.length === 3), await pg.evaluate(() => document.getElementById('hxPanel').innerText.slice(0, 300)));
+    await pg.unroute(/pub\.orcid\.org/); await pg.route(/pub\.orcid\.org/, r => r.abort());
+    await pg.click('#anew'); T('0.8 правка 4: «Найти другого автора» убирает вставленные значения', await pg.evaluate(() => AU.hx.length === 0 && !document.querySelector('.hplate')), ''); }
+  // правка 5: режим «Журнал»
+  { await pg.fill('#jq', 'Nature\n0028-0836\nPhysical Review\nЖурнал вымышленных результатов несуществующих наук'); await pg.fill('#jy', '2023'); await pg.click('#jgo'); await pg.waitForFunction(() => /Готово/.test(document.getElementById('jstatus').textContent));
+    const j = await pg.evaluate(() => { const tr = [...document.querySelectorAll('#outJournal table.t tr')].slice(1).map(r => r.innerText); return { tr, nav: document.getElementById('nav').innerText, st: document.getElementById('jstatus').textContent }; });
+    T('0.8 правка 5: журналы — Nature по названию и по ISSN (Q1 на 2023, импакт-фактор, Белый список), похожие — выбор, вымышленный — «не найдено в справочниках»', j.tr.length === 4 && /Q1/.test(j.tr[0]) && /на 2023/.test(j.tr[0]) && /уровень 1/.test(j.tr[0]) && /Q1/.test(j.tr[1]) && /выберите/.test(j.tr[2]) && /не найдено в справочниках/.test(j.tr[3]) && /Журналы\s*4/.test(j.nav), j);
+    await pg.click('#outJournal button:has-text("Это он")'); const p3 = await pg.evaluate(() => document.querySelectorAll('#outJournal table.t tr')[3].innerText);
+    T('0.8 правка 5: «Это он» — выбранный журнал показан с квартилем и пометкой о неполном совпадении', /Physical Review/.test(p3) && /Q\d/.test(p3) && /совпало не полностью/.test(p3), p3);
+    const [dl] = await Promise.all([pg.waitForEvent('download'), pg.click('#jxlsx')]); T('0.8 правка 5: «Скачать Excel» для журналов', /^Журналы_.*\.xlsx$/.test(dl.suggestedFilename()), dl.suggestedFilename()); }
+  // правка 6: документы — PDF с текстом (список в конце), PDF с таблицей, Word, скан
+  { const pd = await br.newPage(); const fio = PUBS.slice(0, 3);
+    await pd.setContent(`<body style="font:13px Times New Roman;margin:30px"><p><b>Вымышленный отчёт о работе</b></p><p>Раздел 1. Введение. В 2023 году выполнена работа по вымышленной теме.</p><p style="page-break-after:always">Текст отчёта без публикаций.</p><p><b>Список публикаций</b></p>${fio.map((p, i) => `<p>${i + 1}. ${p[0]} ${p[1]} // ${p[3]}. ${p[2]}. Vol. ${10 + i}. P. ${100 + i}-${110 + i}.${i === 0 ? ' Квартиль: Q1. Импакт-фактор: 64,8' : ''}</p>`).join('')}<p>Подпись ______________ Соколова А.В.</p></body>`);
+    const f1 = B + '/evals/doc_list.pdf'; await pd.pdf({ path: f1, format: 'A4' });
+    await pd.setContent(`<body style="font:12px Times New Roman;margin:20px"><p><b>2.3. Наиболее значимые научные публикации руководителя</b></p><style>td,th{border:1px solid #555;padding:4px}</style><table style="border-collapse:collapse"><tr><th>№</th><th>Авторы публикации</th><th>Название публикации</th><th>Год</th><th>Наименование издания</th><th>Импакт-фактор</th></tr>${PUBS.map((p, i) => `<tr><td>${i + 1}.</td><td>${p[0]}</td><td>${p[1]}</td><td>${p[2]}</td><td>${p[3]}</td><td>${p[4]}</td></tr>`).join('')}</table><p><b>2.4. Монографии</b></p><p>1. Sokolova A.V. Fictional monograph on sorbents. Moscow: Nauka, 2020. 300 p.</p></body>`);
+    const f2 = B + '/evals/doc_table.pdf'; await pd.pdf({ path: f2, format: 'A4', landscape: true });
+    const png = fs.readFileSync(shot).toString('base64'); await pd.setContent(`<body style="margin:0"><img src="data:image/png;base64,${png}" style="width:100%"></body>`); const f3 = B + '/evals/doc_scan.pdf'; await pd.pdf({ path: f3, format: 'A4', landscape: true }); await pd.close();
+    const f4 = B + '/evals/doc.docx'; require('child_process').execFileSync('python3', ['-c', `import docx,sys
+d=docx.Document(); d.add_paragraph('Вымышленная справка'); d.add_paragraph('Список научных трудов')
+d.add_paragraph('Sokolova A.V., Orlov D.K. Alginate sorbents for oil spill response in cold seawater // Nature. 2023. Vol. 615. P. 100-110.', style='List Number')
+d.add_paragraph('Orlov D.K., Sokolova A.V., Lebedev M.N. Thermal transport in layered oxide ceramics under cyclic load // Physical Review B. 2022. Vol. 105. P. 12345.', style='List Number')
+d.save(sys.argv[1])`, f4]);
+    const docRes = () => pg.evaluate(() => ({ box: document.getElementById('docOut').innerText, n: DOC ? DOC.recs.length : -1, recs: DOC ? DOC.recs.map(r => r.text) : [], scanned: DOC ? DOC.scanned : null }));
+    const waitDoc = () => pg.waitForFunction(() => !BUSY && /найдено записей|не найдены|не прочитан/.test(document.getElementById('docOut').innerText), null, { timeout: 240000 });
+    await pg.fill('#list', ''); await pg.setInputFiles('#dfile', f1); await waitDoc(); let d = await docRes();
+    T('0.8 правка 6: PDF со списком в конце — 3 записи, раздел «Список публикаций», подпись и текст отчёта не попали', d.n === 3 && /Список публикаций/.test(d.box) && !d.recs.some(t => /Подпись|Введение/.test(t)), d);
+    await pg.click('#docOut tr:nth-child(4) input[type=checkbox]'); await pg.click('#docOut button:has-text("Проверить отмеченные (2)")'); await pg.waitForFunction(() => /Готово|неполный/.test(document.getElementById('status').textContent) && !BUSY, null, { timeout: 60000 });
+    const lr = await pg.evaluate(() => ({ n: W.pubs.length, f: W.pubs.map(p => p.found).join(), q: document.querySelectorAll('#outList table.t tr')[1].children[3].innerText, docGone: document.getElementById('docOut').style.display === 'none' }));
+    T('0.8 правка 6: «Проверить отмеченные» — 2 записи проверены, у первой «в списке: Q1» рядом с найденным квартилем', lr.n === 2 && lr.f === 'ok,ok' && /в списке: Q1/.test(lr.q) && lr.docGone, lr);
+    await pg.setInputFiles('#dfile', f2); await waitDoc(); d = await docRes();
+    T('0.8 правка 6: PDF с таблицей публикаций — 6 строк таблицы, импакт-фактор из таблицы в записи, монография из раздела 2.4 не попала', d.n === 6 && /Alginate sorbents/.test(d.recs[0]) && /64,8/.test(d.recs[0]) && !d.recs.some(t => /monograph/.test(t)), d);
+    await pg.click('#docOut button:has-text("Закрыть")');
+    await pg.setInputFiles('#dfile', f4); await waitDoc(); d = await docRes();
+    T('0.8 правка 6: Word с автонумерацией — 2 записи с номерами 1 и 2', d.n === 2 && /^1\. Sokolova/.test(d.recs[0]) && /^2\. Orlov/.test(d.recs[1]), d);
+    await pg.click('#docOut button:has-text("Закрыть")');
+    await pg.setInputFiles('#dfile', f3); await waitDoc(); d = await docRes();
+    T('0.8 правка 6: скан в PDF — страница распознана как снимок, найдено 6 записей, пометка «сканы»', d.n === 6 && d.scanned && d.scanned.length === 1 && /скан/.test(d.box), d);
+    await pg.click('#docOut button:has-text("Закрыть")');
+    const tf = B + '/evals/doc_none.pdf'; { const pn = await br.newPage(); await pn.setContent('<p>Отчёт о командировке. Поездка прошла в 2024 году успешно, встречи проведены.</p>'); await pn.pdf({ path: tf }); await pn.close(); }
+    await pg.setInputFiles('#dfile', tf); await waitDoc(); d = await docRes();
+    T('0.8 правка 6: документ без публикаций — «публикации не найдены», предложено вставить текст', d.n === 0 && /публикации не найдены/.test(d.box) && /вставьте/i.test(d.box), d);
+    await pg.click('#docOut button:has-text("Закрыть")'); await pg.fill('#list', ''); }
   await pg.screenshot({ path: B + '/evals/shot_list.png', fullPage: true });
   // 0.7.4: «Проверить связь» не зависает, если одна база молчит (ожидания записаны до прогона)
   await pg.unroute(/journalrank\.rcsi\.science/); await pg.route(/journalrank\.rcsi\.science/, () => { /* не отвечаем никогда */ });
@@ -352,10 +429,13 @@ const AID = { Sokolova: 'A1', Orlov: 'A2', Lebedev: 'A3' }, ANAME = { A1: 'Anna 
   const ps = await br.newPage({ viewport: { width: 1400, height: 900 } }); const serr = []; ps.on('pageerror', e => serr.push(String(e)));
   await ps.goto('http://localhost:8765/'); await ps.waitForFunction(() => /Справочники:|не загружены/.test(document.getElementById('refinfo').textContent), null, { timeout: 30000 });
   const si = await ps.evaluate(() => ({ ref: document.getElementById('refinfo').textContent, robots: (document.querySelector('meta[name=robots]') || {}).content, btn: document.getElementById('go').disabled, ch: document.getElementById('changes').textContent.slice(0, 40) }));
-  T('сайт: справочники загружены отдельным файлом, страница закрыта от поисковиков, «Что нового» есть', /Справочники: SCImago/.test(si.ref) && /noindex/.test(si.robots) && !si.btn && /0\.7/.test(si.ch), si);
+  T('сайт: справочники загружены отдельным файлом, страница закрыта от поисковиков, «Что нового» есть', /Справочники: SCImago/.test(si.ref) && /noindex/.test(si.robots) && !si.btn && /^0\.\d/.test(si.ch), si);
   const ts = Date.now(); await ps.setInputFiles('#file', shot); await ps.waitForFunction(() => /распознан|не распознан/.test(document.getElementById('ocrmsg').textContent) && !BUSY, null, { timeout: 180000 });
   const sn = await ps.evaluate(() => [document.getElementById('ocrmsg').textContent, splitEntries(document.getElementById('list').value).length]);
   T('сайт: распознавание подгружается при первом снимке и читает список (6 записей)', /Снимок распознан/.test(sn[0]) && sn[1] === 6, sn); console.log(`Сайт: распознавание с загрузкой — ${Math.round((Date.now() - ts) / 1000)} с`);
+  // 0.8: на сайте чтение PDF подгружается при первом документе (папка pdf/)
+  { await ps.setInputFiles('#dfile', B + '/evals/doc_list.pdf'); await ps.waitForFunction(() => !BUSY && /найдено записей|не найдены|не прочитан/.test(document.getElementById('docOut').innerText), null, { timeout: 60000 });
+    const sd = await ps.evaluate(() => ({ n: DOC ? DOC.recs.length : -1, box: document.getElementById('docOut').innerText.slice(0, 200) })); T('0.8 сайт: PDF читается (pdf.js подгружен из папки pdf/), 3 записи', sd.n === 3, sd); }
   T('сайт: полоса ошибок скрыта', await ps.evaluate(() => document.getElementById('pgerr').style.display === 'none'), 'видна');
   // справочник не загрузился: сообщение и «Повторить», кнопка «Проверить связь» работает (ожидания записаны до прогона)
   { const pf = await br.newPage({ viewport: { width: 1200, height: 800 } }); await pf.route(/data\/ref\.json/, r => r.fulfill({ status: 500, body: 'x' })); await pf.route(/crossref|openalex|orcid|journalrank/, r => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: '{}' }));

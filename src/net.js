@@ -179,7 +179,11 @@ async function orcidExternalIds(orcid) {
   if (res.status === 404) return { list: [], err: 'запись ORCID не найдена' };
   if (!res.ok) return { list: [], err: 'реестр ORCID ответил ' + res.status };
   const j = await res.json(), r = (j && j['external-identifier']) || [];
-  return { list: r.map(x => ({ type: x['external-id-type'] || '', value: String(x['external-id-value'] || '').trim(), url: x['external-id-url'] && x['external-id-url'].value || '' })).filter(x => x.value) };
+  const list = r.map(x => ({ type: x['external-id-type'] || '', value: String(x['external-id-value'] || '').trim(), url: x['external-id-url'] && x['external-id-url'].value || '' })).filter(x => x.value);
+  // ссылки профиля (researcher-urls): там бывают профили eLibrary, Scopus, Publons — 0.8, правка 2; ошибка здесь не мешает основному ответу
+  try { const u2 = `${NET.orcid}/v3.0/${orcid}/researcher-urls`, r2 = await tfetch(u2, { headers: h }); NET.log.push({ url: u2, status: r2.status });
+    if (r2.ok) { const j2 = await r2.json(); ((j2 && j2['researcher-url']) || []).forEach(x => { const v = x.url && x.url.value; if (v) list.push({ type: 'url:' + (x['url-name'] || ''), value: String(v).trim(), url: String(v).trim() }); }); } } catch (e) { }
+  return { list };
 }
 /* Поиск автора по Scopus ID. База может такой поиск не поддерживать — тогда {err}. */
 async function authorByScopus(sid) {

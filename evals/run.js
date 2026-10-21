@@ -1,8 +1,8 @@
 // Контрольные кейсы правил. Ожидания записаны до прогона: по общеизвестным сведениям об изданиях и решениям Германа.
 // Запуск: node evals/run.js
 const fs = require('fs'), path = require('path'); const B = path.join(__dirname, '..');
-const src = fs.readFileSync(B + '/src/core.js', 'utf8').replace(/if \(typeof module[^\n]*\n?$/m, '') + fs.readFileSync(B + '/src/net.js', 'utf8').replace(/if \(typeof module[^\n]*\n?$/m, '');
-const A = new Function(src + '\nreturn {orgHit,leaderByOrg,ocrQuality,isElibList,CACHE,cacheKey,judgePub,getJson,tfetch,PING_MS,corrOf,orgMatch,findDuplicates,instNames,oaShip,orcidExternalIds,ST,matchScore,findDoi,FOUND_OK,oaWork,oaSearchWorks,instRu,loadRef,findJournal,splitEntries,splitSiteEntries,detectSite,isUiLine,parseEntry,titleScore,canonName,leaderVariants,sameSurname,authorPosition,journalVerdict,judgePub,judgeProfileWork,detectLeader,parseAuthorInput,orcidValid,wlAt,passFilter,parseFIO,nameMatch,translitVariants,NET,crWork,findWork,enrichOA,enrichWL,authorInfo,searchAuthors,authorByOrcid,authorByScopus,orcidSearch,runSelfCheck,SELF,authorWorks,cleanOrcid,pingAll};')();
+const src = fs.readFileSync(B + '/src/core.js', 'utf8').replace(/if \(typeof module[^\n]*\n?$/m, '') + fs.readFileSync(B + '/src/net.js', 'utf8').replace(/if \(typeof module[^\n]*\n?$/m, '') + fs.readFileSync(B + '/src/extra.js', 'utf8').replace(/if \(typeof module[^\n]*\n?$/m, '');
+const A = new Function(src + '\nreturn {loadSc,parseCoverage,scAt,findSc,findJournalQuery,journalFacts,titleSim,idFromOrcidItem,collectAuthorIds,parseHirschPage,hirschSummary,findDocRecords,declQuartile,orgHit,leaderByOrg,ocrQuality,isElibList,CACHE,cacheKey,judgePub,getJson,tfetch,PING_MS,corrOf,orgMatch,findDuplicates,instNames,oaShip,orcidExternalIds,ST,matchScore,findDoi,FOUND_OK,oaWork,oaSearchWorks,instRu,loadRef,findJournal,splitEntries,splitSiteEntries,detectSite,isUiLine,parseEntry,titleScore,canonName,leaderVariants,sameSurname,authorPosition,journalVerdict,judgePub,judgeProfileWork,detectLeader,parseAuthorInput,orcidValid,wlAt,passFilter,parseFIO,nameMatch,translitVariants,NET,crWork,findWork,enrichOA,enrichWL,authorInfo,searchAuthors,authorByOrcid,authorByScopus,orcidSearch,runSelfCheck,SELF,authorWorks,cleanOrcid,pingAll};')();
 const DATA = JSON.parse(fs.readFileSync(B + '/data/ref.json', 'utf8'));
 // вымышленные издания для кейсов «квартиль по годам»: история задана за 2021–2025, более ранние годы справочника — пусто
 const fake = (t, issn, h) => DATA.sj.push([t, issn, 0, '', 900000 + DATA.sj.length, ...Array(2 * (DATA.sjYears.length - 5)).fill(null), ...h]);
@@ -511,5 +511,101 @@ eq('транслит / несколько написаний фамилии', A.
     N.fetch = async u => /journalrank|rcsi/.test(u) ? hang() : (/orcid/.test(u) ? res(200, { 'expanded-result': [{ 'orcid-id': '0000-0002-1825-0097' }] }) : (/openalex/.test(u) ? res(200, { results: [] }) : res(200, { message: { items: [] } })));
     const seen = []; t = Date.now(); const pr = await A.pingAll((i, r) => seen.push(i)); const dt = Date.now() - t;
     eq('0.7.4 / проверка связи: базы опрашиваются одновременно, зависшая не держит остальных', [pr.map(r => r.ok).join(), seen.indexOf(1) === 3, dt < A.PING_MS + 2000, dt >= A.PING_MS - 200], ['true,false,true,true', true, true, true]); }
+  /* ===== 0.8: правки 2–6. Всё вымышлено, кроме названий и ISSN настоящих изданий (Nature, Physical Review B, Журнал технической физики). Ожидания записаны до прогона. ===== */
+  {
+    // --- правка 3: справочник Scopus (вымышленные строки в том виде, как их собирает mkdata_scopus.py; Nature — настоящий ISSN)
+    DATA.sc = { date: 'Sep 2026', rows: [
+      ['Nature', '00280836 14764687', 21206, 1, '1869-ongoing'],
+      ['Vymyshlennyi Zhurnal Fiziki', '12345679 2345678X', 99000001, 1, '2026; 2019-2024'],
+      ['Journal of Fictional Results', '34567890', 99000002, 0, '2015-2020', 1, 2020, '12', '4', 'Discontinuation'],
+      ['Novyi Vymyshlennyi Vestnik', '56789012', null, 2, '', 0, null, '', '', '', '01.08.2026']] };
+    A.loadRef(DATA);
+    eq('0.8 Scopus / годы индексации разбираются', A.parseCoverage('2026; 2019-2024'), [[2019, 2024], [2026, 2026]]);
+    eq('0.8 Scopus / «ongoing» — по сей день', A.parseCoverage('2010-ongoing'), [[2010, 9999]]);
+    const sc1 = A.findSc(['2345-678X'])[0];
+    eq('0.8 Scopus / по EISSN найден, год внутри годов индексации — без пометок', [sc1 && sc1.id, A.scAt(sc1, 2022).inCov, A.scAt(sc1, 2022).notes.length], [99000001, true, 0]);
+    eq('0.8 Scopus / год вне годов индексации — «проверьте: не индексировался»', (a => [a.inCov, /не индексировался/.test(a.notes[0] || '')])(A.scAt(sc1, 2025)), [false, true]);
+    const sc2 = A.findSc(['3456-7890'])[0];
+    eq('0.8 Scopus / исключён: статья позже последнего номера — «проверьте»', (a => [a.afterDisc, /после последнего номера/.test(a.notes.join()), /2020, том 12, выпуск 4/.test(a.notes.join())])(A.scAt(sc2, 2022)), [true, true, true]);
+    eq('0.8 Scopus / принят, ещё не загружен', (a => /принят в Scopus 01\.08\.2026/.test(a.notes[0] || ''))(A.scAt(A.findSc(['5678-9012'])[0], 2026)), true);
+    { const r = A.judgePub(A.parseEntry('1. Ivanov I.I. Fictional paper on sorbents in cold water. Vymyshlennyi Zhurnal Fiziki. 2025.'), { doi: '10.5555/f1', title: 'Fictional paper on sorbents in cold water', journal: 'Vymyshlennyi Zhurnal Fiziki', issns: ['12345679'], year: 2025, type: 'journal-article', via: 'doi', score: 1 }, {});
+      eq('0.8 Scopus / в строке списка: нет в SCImago, но есть в Scopus; год вне индексации', [!!r.jv.sc, r.notes.some(n => /в Scopus есть, квартиля SCImago нет/.test(n)), r.notes.some(n => /не индексировался/.test(n))], [true, true, true]); }
+    // --- правка 6: заявленный квартиль и импакт-фактор
+    { const e = A.parseEntry('1. Ivanov I.I. Title of a fictional paper about things. Fictional Journal. 2023. Квартиль: Q1. 5,2');
+      eq('0.8 / квартиль и импакт-фактор из записи — отдельно, в запрос не идут', [e.declQ, e.declIF, /Q1|Квартиль/.test(e.query)], [1, 5.2, false]); }
+    eq('0.8 / «Q2» внутри DOI или слова — не квартиль', [A.parseEntry('1. Ivanov I.I. Fictional paper. Journal. 2023. DOI: 10.5555/Q2.2023.1').declQ, A.parseEntry('1. Ivanov I.I. Fictional HQ2 paper title here. Journal. 2023.').declQ], [undefined, undefined]);
+    // --- правка 5: режим «Журнал»
+    { const r = A.findJournalQuery('0028-0836'); eq('0.8 журнал / по ISSN — Nature сразу, Q1, есть и в Scopus, и в Белом списке', [r.sure && r.sure.e.title, r.sure && A.journalFacts(r.sure.e).q, !!(r.sure && r.sure.e.sc), !!(r.sure && r.sure.e.wl)], ['Nature', 1, true, true]); }
+    { const r = A.findJournalQuery('Nature'); eq('0.8 журнал / по точному названию — выбран сам', r.sure && r.sure.e.issns.indexOf('00280836') >= 0, true); }
+    { const r = A.findJournalQuery('Physical Reviw B'); eq('0.8 журнал / название с опечаткой — Physical Review B', r.sure && r.sure.e.sj && r.sure.e.sj.title, 'Physical Review B'); }
+    { const r = A.findJournalQuery('Physical Review'); eq('0.8 журнал / несколько похожих (Physical Review A, B, …) — выбор за человеком', [r.sure, r.hits.filter(h => /^Physical Review [A-E]$/.test(h.e.title)).length >= 2], [null, true]); }
+    { const r = A.findJournalQuery('Журнал вымышленных результатов несуществующих наук'); eq('0.8 журнал / нет в справочниках — пусто', [r.hits.length, r.sure], [0, null]); }
+    { const w = DATA.wl.find(x => !x[1].split(' ').some(i => (DATA.sj.some(s => s[1].split(' ').indexOf(i) >= 0)))); const r = A.findJournalQuery(w[1].split(' ')[0]);
+      eq('0.8 журнал / есть в Белом списке, нет в SCImago', [!!(r.sure && r.sure.e.wl), !!(r.sure && r.sure.e.sj)], [true, false]); }
+    { const r = A.findJournalQuery('Vymyshlennyi Zhurnal Fiziki'); const f = r.sure && A.journalFacts(r.sure.e, 2025);
+      eq('0.8 журнал / есть в Scopus, нет в SCImago: «в Scopus есть, квартиля SCImago нет», год вне индексации', [!!f, f && f.notes.some(n => /в Scopus есть, квартиля SCImago нет/.test(n)), f && f.notes.some(n => /не индексировался/.test(n)), f && f.scId], [true, true, true, 99000001]); }
+    { const r = A.findJournalQuery('Журнал технической физики'); eq('0.8 журнал / русское название из Белого списка', !!(r.sure && r.sure.e.wl), true); }
+    { const r = A.findJournalQuery('0028-0836'); const f = A.journalFacts(r.sure.e, 2023); eq('0.8 журнал / год указан — квартиль на этот год', [f.qYear, f.q], [2023, 1]); }
+    { const r = A.findJournalQuery('Nature 1234-5679'); eq('0.8 журнал / ISSN другого издания, а название Nature — «проверьте»', r.notes.some(n => /название в запросе другое/.test(n)), true); }
+    // --- правка 2: идентификаторы автора из OpenAlex и ORCID
+    const ci = (info, orc) => A.collectAuthorIds({}, info, orc);
+    eq('0.8 ids / Scopus ID только в OpenAlex', (r => [r.ids.filter(x => x.b === 'scopus').map(x => x.v + ':' + x.src.join('+')), r.warns.length])(ci([{ id: 'A1', scopus: '57000000001' }], [])), [['57000000001:из OpenAlex'], 0]);
+    eq('0.8 ids / Scopus ID только в ORCID', (r => r.ids.filter(x => x.b === 'scopus').map(x => x.v + ':' + x.src.join('+')))(ci([{ id: 'A1' }], [{ type: 'Scopus Author ID', value: '57000000001' }])), ['57000000001:из ORCID']);
+    eq('0.8 ids / в обоих совпадает — один идентификатор, два источника', (r => [r.ids.filter(x => x.b === 'scopus').map(x => x.src.join('+')), r.warns.length])(ci([{ id: 'A1', scopus: '57000000001' }], [{ type: 'Scopus Author ID', value: '57000000001' }])), [['из OpenAlex+из ORCID'], 0]);
+    eq('0.8 ids / в обоих расходится — оба и «проверьте»', (r => [r.ids.filter(x => x.b === 'scopus').length, /различаются/.test(r.warns[0] || '')])(ci([{ id: 'A1', scopus: '57000000001' }], [{ type: 'Scopus Author ID', value: '57000000002' }])), [2, true]);
+    eq('0.8 ids / нигде нет — Scopus ID нет', ci([{ id: 'A1' }], []).ids.filter(x => x.b === 'scopus').length, 0);
+    eq('0.8 ids / РИНЦ по ссылке профиля в ORCID, SPIN по типу, ResearcherID по ссылке Publons', [A.idFromOrcidItem({ type: 'url:eLibrary', value: 'https://www.elibrary.ru/author_profile.asp?id=1&authorid=654321' }), A.idFromOrcidItem({ type: 'SPIN-код', value: '12345678' }), A.idFromOrcidItem({ type: 'Other', value: 'x', url: 'https://publons.com/researcher/AAB-1234-2019/' })], [{ b: 'rinc', v: '654321' }, { b: 'spin', v: '1234-5678' }, { b: 'rid', v: 'AAB-1234-2019' }]);
+    // --- правка 4: индекс Хирша со страницы профиля
+    const F = A.parseFIO('Иванов Иван');
+    const ELIB = 'Иванов Иван Иванович\nВымышленный университет\nSPIN-код: 1234-5678, AuthorID: 765432\nЧисло публикаций на elibrary.ru\t120\nЧисло цитирований из публикаций на elibrary.ru\t900\nИндекс Хирша по всем публикациям на elibrary.ru\t18\nИндекс Хирша по публикациям в РИНЦ\t15\nИндекс Хирша по ядру РИНЦ\t6\n';
+    eq('0.8 Хирш / eLibrary: «по публикациям в РИНЦ» — основное, остальные рядом, AuthorID, фамилия на месте', (h => [h.base, h.val, h.label, h.alts.map(a => a.v).sort((a, b) => a - b), h.id, h.nameOk])(A.parseHirschPage(ELIB, null, F)), ['rinc', 15, 'по публикациям в РИНЦ', [6, 18], '765432', true]);
+    const SCOP = 'Ivanov, Ivan I.\nVymyshlennyi University, Moscow\nAuthor ID: 57000000001\n1,234\nCitations by 1,100 documents\n56\nDocuments\n12\nh-index\nView h-graph';
+    eq('0.8 Хирш / Scopus: число над подписью, Author ID', (h => [h.base, h.val, h.id, h.nameOk])(A.parseHirschPage(SCOP, null, F)), ['scopus', 12, '57000000001', true]);
+    eq('0.8 Хирш / Web of Science: «H-Index: 9», ResearcherID', (h => [h.base, h.val, h.id])(A.parseHirschPage('Ivanov, Ivan\nWeb of Science ResearcherID: AAA-1234-2020\nH-Index: 9\nPublications 40')), ['wos', 9, 'AAA-1234-2020']);
+    eq('0.8 Хирш / Google Scholar: за всё время, за 5 лет — рядом', (h => [h.base, h.val, h.alts.map(a => a.v)])(A.parseHirschPage('Ivan Ivanov\nGoogle Scholar\nAll Since 2021\nCitations 2500 1200\nh-index 25 18\ni10-index 40 30')), ['gs', 25, [18]]);
+    eq('0.8 Хирш / два разных числа у «h-index» — не выбирает, «проверьте»', (h => [h.val, h.cands, /несколько/.test(h.err)])(A.parseHirschPage('Scopus\nh-index 12\nh-index 14')), [null, [12, 14], true]);
+    eq('0.8 Хирш / вставленная страница без Хирша — «не найден на странице»', (h => [h.val, /не найден/.test(h.err)])(A.parseHirschPage('Scopus author profile\nAuthor ID: 57000000001\nDocuments 56')), [null, true]);
+    eq('0.8 Хирш / на странице другая фамилия — «проверьте, тот ли профиль»', A.parseHirschPage(SCOP, null, A.parseFIO('Петров Пётр')).nameOk, false);
+    eq('0.8 Хирш / база не узнана — просит выбрать', /с какой базы/.test(A.parseHirschPage('some text h-index 5').err), true);
+    const hs1 = A.hirschSummary([{ h: 10, id: 'A1' }], [A.parseHirschPage(ELIB, null, F)]);
+    eq('0.8 Хирш / OpenAlex 10 и РИНЦ 15 — наибольший РИНЦ, OpenAlex рядом', [hs1.best.base, hs1.best.v, hs1.perBase.openalex.v, hs1.warns.length], ['rinc', 15, 10, 0]);
+    eq('0.8 Хирш / OpenAlex 20 больше РИНЦ 15 — наибольший OpenAlex', (s => [s.best.base, s.best.v])(A.hirschSummary([{ h: 20, id: 'A1' }], [A.parseHirschPage(ELIB, null, F)])), ['openalex', 20]);
+    eq('0.8 Хирш / только OpenAlex', (s => [s.best.base, s.vals.length])(A.hirschSummary([{ h: 7, id: 'A1' }], [])), ['openalex', 1]);
+    { const s = A.hirschSummary([{ h: 7, id: 'A1' }], [{ base: 'scopus', val: 12, id: '57000000001' }, { base: 'scopus', val: 14, id: '57000000002' }]);
+      eq('0.8 Хирш / два профиля Scopus с разным Хиршем — наибольший 14, «несколько профилей — проверьте»', [s.best.base, s.best.v, s.best.id, /несколько профилей/.test(s.warns.join())], ['scopus', 14, '57000000002', true]); }
+    // --- правка 6: публикации в документе
+    { const pages = [
+        ['Вымышленный институт — отчёт', 'Раздел 1. Введение', 'Текст про что-то 2023 года без публикаций.', '1'],
+        ['Вымышленный институт — отчёт', 'Ещё текст отчёта.', '2'],
+        ['Вымышленный институт — отчёт', 'Список публикаций', '1. Sokolova A.V., Orlov D.K. Alginate sorbents for oil spill response in cold seawater // Nature. 2023. Vol. 615. P. 100-110. DOI: 10.5555/t0', '2. Orlov D.K., Sokolova A.V. Thermal transport in layered oxide ceramics under', '3'],
+        ['Вымышленный институт — отчёт', 'cyclic load // Physical Review B. 2022. Vol. 105. P. 12345.', '3. Соколова А.В. Модель переноса тепла в пористых сорбентах // Журнал технической физики. 2024. Т. 94, № 3. С. 210–218.', 'Подпись ______ Соколова А.В.', '4']];
+      const r = A.findDocRecords(pages);
+      eq('0.8 документ / список в конце: 3 записи, раздел найден, колонтитулы и подпись отброшены, запись через перенос страницы склеена',
+        [r.records.length, r.heading, r.pages, r.records.some(x => /Вымышленный институт|Подпись/.test(x.text)), /under cyclic load/.test((r.records[1] || {}).text || ''), (r.records[1] || {}).page], [3, 'Список публикаций', [3, 4], false, true, 3]); }
+    { const C = (a) => ({ cells: a.map(([t, x]) => ({ t, x })) });
+      const pages = [['Прочее 2021 года.', '2.3. Наиболее значимые научные публикации',
+        C([['№', 50], ['Авторы', 120], ['Название', 260], ['Год', 400], ['Издание', 460], ['Импакт-фактор', 560], ['Квартиль', 640]]),
+        C([['1.', 50], ['Sokolova A.V., Orlov D.K.', 120], ['Alginate sorbents for oil spill', 260], ['2023', 400], ['Nature', 460], ['64,8', 560], ['Q1', 640]]),
+        C([['Lebedev M.N.', 122], ['response in cold seawater', 262]]),
+        C([['2.', 50], ['Orlov D.K.', 120], ['Thermal transport in layered ceramics', 260], ['2022', 400], ['Physical Review B', 460], ['3,9', 560], ['Q1', 640]]),
+        '2.4. Монографии', '1. Sokolova A.V. Fictional monograph on sorbents. Moscow: Nauka, 2020. 300 p.']];
+      const r = A.findDocRecords(pages), e1 = r.records[0] ? A.parseEntry(r.records[0].text) : {};
+      eq('0.8 документ / таблица публикаций: 2 строки, перенос внутри ячейки склеен, монография из другого раздела не попала', [r.records.length, /oil spill response in cold seawater/.test((r.records[0] || {}).text || ''), r.records.some(x => /monograph/.test(x.text))], [2, true, false]);
+      eq('0.8 документ / из таблицы — квартиль и импакт-фактор, указанные в документе', [e1.declQ, e1.declIF, e1.num], [1, 64.8, 1]); }
+    { const R = a => ({ cells: a.map((t, x) => ({ t, x })), row: true });
+      const r = A.findDocRecords([[R(['Авторы', 'Название', 'Год', 'Журнал']), R(['Ivanov I.I.', 'Fictional study of sorbents', '2019', 'Journal of Fictional Results']), R(['Petrov P.P.', 'Another fictional study', '2021', 'Fictional Materials Letters'])]]);
+      eq('0.8 документ / таблица Word без столбца номеров — каждая строка таблицы отдельная запись, номера проставлены', [r.records.length, (r.records[1] || {}).text && r.records[1].text.slice(0, 3)], [2, '2. ']); }
+    // таблица из PDF с координатами: ячейки выровнены по верху (как в Word), перенос внутри ячеек; номер «11.» внутри записи — не новая запись
+    { const Lg = (y, cells) => ({ y, h: 10, cells: cells.map(([t, x]) => ({ t, x, w: t.length * 5 })) });
+      const r = A.findDocRecords([[ 'Наиболее значимые публикации', Lg(700, [['№', 40], ['Авторы', 70], ['Название', 220], ['Год', 420], ['Журнал', 460]]),
+        Lg(680, [['1.', 40], ['Ivanov I.I.,', 70], ['Fictional sorbents for', 220], ['2021', 420], ['Fictional', 460]]), Lg(668, [['Petrov P.P.', 70], ['cold seawater', 220], ['Materials Letters', 460]]),
+        Lg(650, [['2.', 40], ['Smirnov A.A.', 70], ['Fictional ceramics', 220], ['2022', 420], ['Physical Review B', 460]]), '2.4. Монографии', '1. Ivanov I.I. Fictional monograph. Moscow, 2020. 200 p.']]);
+      eq('0.8 документ / таблица PDF по верху: продолжения строк — к своей записи', [r.records.length, (r.records[0] || {}).text, /monograph/.test(r.records.map(x => x.text).join())], [2, '1. Ivanov I.I., Petrov P.P.. Fictional sorbents for cold seawater. 2021. Fictional Materials Letters'.replace('..', '.'), false]); }
+    { const r = A.findDocRecords([['Список публикаций', '1. Ivanov I.I. Fictional paper one // Fictional Journal. 2021. Vol.', '11. P. 1-10.', '2. Petrov P.P. Fictional paper two // Fictional Journal. 2022. Vol. 3. P. 5-9.']]);
+      eq('0.8 документ / «11. P. 1-10.» в начале строки — продолжение записи 1, а не запись 11', [r.records.length, /Vol\. 11\. P\. 1-10/.test((r.records[0] || {}).text || '')], [2, true]); }
+    eq('0.8 документ / без публикаций — ничего не найдено', A.findDocRecords([['Отчёт о командировке', 'Поездка прошла в 2024 году успешно.']]).records.length, 0);
+    { const r = A.findDocRecords([['References', 'Ivanov I.I., Petrov P.P. Fictional study of sorbents. Journal of Fictional Results. 2019. Vol. 3. P. 1-10.', 'Smirnov A.A. Another fictional study of things in', 'cold water. Fictional Materials Letters. 2021. Vol. 5. P. 20-30.']]);
+      eq('0.8 документ / список без номеров: записи по фамилии в начале строки, перенос склеен', [r.records.length, /things in cold water/.test((r.records[1] || {}).text || '')], [2, true]); }
+  }
   console.log(`Пройдено ${pass} из ${pass + fail}`); fails.forEach(f => console.log('  НЕ ПРОЙДЕНО — ' + f)); process.exit(fail ? 1 : 0);
 })();
