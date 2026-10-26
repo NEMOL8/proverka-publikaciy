@@ -46,12 +46,11 @@ ul{margin:4px 0 8px;padding-left:20px}
 details.adv{margin-top:8px}details.adv>summary{font-weight:400;color:var(--dim)}
 .card{background:var(--sheet);border-top:1px solid var(--beige);padding:14px 18px;margin-top:12px}
 /* ----- главная: три колонки-раздела 01 Автор · 02 Журнал · 03 Публикации (правка 1) ----- */
-.cols{display:grid;grid-template-columns:1fr 1fr 1.35fr;gap:18px;margin-top:16px;align-items:start}
+.cols{display:grid;grid-template-columns:1fr;gap:12px;margin-top:16px}
 .col{background:var(--sheet);border-top:1px solid var(--beige);padding:16px 18px 18px;min-width:0}
 .col .cn{font-family:var(--mono);font-size:12px;color:var(--beige);font-weight:500}
 .col h2{margin:0 0 12px;font-size:12px}
 .col p{margin:10px 0 0}
-@media(max-width:1100px){.cols{grid-template-columns:1fr}}
 #drop{border:1px dashed var(--beige);padding:9px 11px;background:#fbf8f3;margin-bottom:8px;font-size:13px}#drop.on{background:#f1e6d8}
 #drop .dim{color:#5f5952}
 body.dragging main{outline:3px dashed var(--acc);outline-offset:-6px}
@@ -202,18 +201,18 @@ tr.done>td{background:#f1f8f1}td .mk{display:block;margin-top:4px;font-size:11.5
 </div>
 <div id="inp" class="cols noprint">
 <section class="col" id="secA"><div class="cn">01</div><h2>Автор и все его публикации</h2>
-<label for="author">ФИО, ORCID, Scopus ID, ResearcherID — или строка с несколькими идентификаторами</label>
+<div class="row"><div style="flex:3 1 380px"><label for="author">ФИО, ORCID, Scopus ID, ResearcherID — или строка с несколькими идентификаторами</label>
 <input type="text" id="author" placeholder="Иванов Иван Иванович   или   AAA-1234-2020/57000000000/0000-0002-1825-0097">
 <div class="dim">Снимок с идентификаторами — Ctrl+V в это поле или <input type="file" id="afile" accept="image/*">. Порядок значений не важен.</div>
-<div style="margin-top:12px"><label for="org">Организация автора <span style="font-weight:400">(чтобы отличить однофамильцев)</span></label><input type="text" id="org" placeholder="например: НИТУ МИСИС"><div class="dim">Помогает выбрать нужного человека среди найденных по ФИО. Никуда не отправляется.</div></div>
+</div><div style="flex:2 1 280px"><label for="org">Организация автора <span style="font-weight:400">(чтобы отличить однофамильцев)</span></label><input type="text" id="org" placeholder="например: НИТУ МИСИС"><div class="dim">Помогает выбрать нужного человека среди найденных по ФИО. Никуда не отправляется.</div></div></div>
 <div id="aparsed" class="dim" style="margin-top:6px"></div>
 <p><button id="ago">Найти автора</button> <button id="anew" class="sec">Найти другого автора</button> <span id="astatus" class="dim"></span></p>
 </section>
 <section class="col" id="secJ"><div class="cn">02</div><h2>Журнал: квартиль и импакт-фактор</h2>
-<label for="jq">Название журнала или ISSN — по одному в строке</label>
+<div class="row"><div style="flex:4 1 380px"><label for="jq">Название журнала или ISSN — по одному в строке</label>
 <div class="jwrap"><textarea id="jq" style="min-height:96px" autocomplete="off" placeholder="Nature&#10;0028-0836&#10;Журнал технической физики&#10;Phys. Rev. B&#10;&#10;Ctrl+Enter — найти"></textarea><div id="jsug" role="listbox"></div></div>
 <div class="dim">Ищется во встроенных справочниках (SCImago, Белый список<span id="jsc"></span>) — без интернета. При вводе — подсказки; название можно с опечатками и сокращениями; ISSN — надёжнее.</div>
-<div style="margin-top:12px;max-width:220px"><label for="jy">Год <span style="font-weight:400">(необязательно)</span></label><input type="number" id="jy" min="1999" max="2100" placeholder="например, 2023"><div class="dim">Квартиль и уровень Белого списка — на этот год.</div></div>
+</div><div style="flex:1 1 150px"><label for="jy">Год <span style="font-weight:400">(необязательно)</span></label><input type="number" id="jy" min="1999" max="2100" placeholder="например, 2023"><div class="dim">Квартиль и уровень Белого списка — на этот год.</div></div></div>
 <p><button id="jgo">Найти журналы</button> <span id="jstatus" class="dim"></span></p>
 </section>
 <section class="col" id="secL"><div class="cn">03</div><h2>Публикации: список, снимок, документ</h2>
