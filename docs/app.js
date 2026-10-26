@@ -2767,6 +2767,7 @@ function renderSources() {
 let PANE = '';
 function openPane(id, focus) {
   if (!$(id)) return; PANE = id;
+  $('home').classList.add('picked');  // большие карточки меню сворачиваются в полосу
   document.querySelectorAll('#inp .col').forEach(c => c.classList.toggle('on', c.id === id));
   document.querySelectorAll('#seg button').forEach(b => { const on = b.dataset.p === id; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
   updDots();
@@ -2778,6 +2779,7 @@ function updDots() {
 }
 function initPanes() {
   $('seg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) openPane(b.dataset.p, true); });
+  $('menu').addEventListener('click', e => { const b = e.target.closest('button.mcard'); if (b) openPane(b.dataset.p, true); });
   document.addEventListener('keydown', e => { if (e.altKey && !e.ctrlKey && !e.metaKey && ['1', '2', '3'].indexOf(e.key) >= 0) { e.preventDefault(); if (document.body.dataset.view !== 'home') setView('home'); openPane(['secA', 'secJ', 'secL'][+e.key - 1], true); } });
   ['author', 'org', 'jq', 'list'].forEach(id => $(id).addEventListener('input', updDots));
 }

@@ -62,6 +62,25 @@ details.adv{margin-top:8px}details.adv>summary{font-weight:400;color:var(--dim)}
 .seg button.on::after{content:"";position:absolute;left:50%;bottom:-9px;margin-left:-8px;border:8px solid transparent;border-bottom:0;border-top-color:var(--acc)}
 .seg .dot{display:none;width:6px;height:6px;border-radius:50%;background:#7aa77f;margin-left:6px;vertical-align:3px}.seg .dot.on{display:inline-block}
 .col{display:none}.col.on{display:block}
+.ask{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}.ask i{font-style:normal;letter-spacing:0;text-transform:none;font-size:12.5px}
+/* главное меню — большие карточки при открытии; после выбора сворачиваются в полосу #seg */
+.menu{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+#home.picked .menu{display:none}#home:not(.picked) #seg{display:none}
+.mcard{all:unset;box-sizing:border-box;cursor:pointer;background:#fff;border-top:2px solid var(--beige);padding:26px 28px 24px;display:flex;flex-direction:column;min-height:470px}
+.mcard:hover{background:#fdfbf7;border-top-color:var(--acc)}.mcard:focus-visible{outline:2px solid var(--beige);outline-offset:2px}
+.mcard .hd{display:flex;align-items:baseline;gap:14px}
+.mcard .n{font-family:var(--mono);font-size:44px;line-height:1;color:var(--beige)}
+.mcard .t{font-size:28px;font-weight:600;color:var(--acc)}
+.mcard .k{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--dim)}
+.mcard .lead{font-size:15px;margin:12px 0 18px;line-height:1.45}
+.mcard .lab{font-size:10.5px;font-weight:500;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);margin:0 0 6px}
+.mcard .ex{display:flex;flex-direction:column;gap:5px;margin-bottom:18px}
+.mcard .ex span{font-family:var(--mono);font-size:12.5px;background:var(--paper);border-left:2px solid var(--beige);padding:4px 9px;color:var(--acc);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mcard ul.get{list-style:none;margin:0 0 18px;padding:0}.mcard ul.get li{padding:4px 0 4px 18px;position:relative;font-size:13.5px;border-bottom:1px solid #f3ece2}
+.mcard ul.get li::before{content:"";position:absolute;left:2px;top:12px;width:7px;height:7px;background:var(--beige)}
+.mcard .msrc{font-size:12px;color:var(--dim);margin-top:auto;padding-top:12px;border-top:1px solid var(--rule)}.mcard .msrc b{font-weight:500;color:var(--ink)}
+.mcard .mgo{margin-top:14px;font-weight:600;color:var(--acc)}
+@media(max-width:900px){.menu{grid-template-columns:1fr}.mcard{min-height:0}}
 @media(max-width:760px){.seg{grid-template-columns:1fr}.seg button{border-right:0;border-bottom:1px solid var(--line)}.seg .k{display:none}.seg button.on::after{display:none}}
 .col{background:var(--sheet);border-top:1px solid var(--beige);padding:22px 26px 24px;min-width:0}
 .col .cn{font-family:var(--mono);font-size:12px;color:var(--beige);font-weight:500}
@@ -216,7 +235,24 @@ tr.done>td{background:#f1f8f1}td .mk{display:block;margin-top:4px;font-size:11.5
 <details class="adv"><summary>Дополнительно</summary><div style="max-width:420px"><label for="oaKey">Свой ключ OpenAlex</label><input type="text" id="oaKey"><div class="dim">Ключ OpenAlex уже встроен в страницу — поле заполнять не нужно. Своё значение нужно, только если встроенный дневной лимит закончился (OpenAlex отвечает «база ограничила число запросов»). Хранится только в этом браузере.</div></div></details>
 </details>
 </div>
-<div class="ask noprint">Что проверяем</div>
+<div class="ask noprint">Что проверяем <i>снимок можно вставить сразу — Ctrl+V откроет «Публикации»</i></div>
+<div class="menu noprint" id="menu">
+<button class="mcard" data-p="secA"><div class="hd"><span class="n">01</span><span class="t">Автор</span><span class="k">Alt+1</span></div>
+<div class="lead">Все сведения о человеке в одном месте: индекс Хирша, профили и все его статьи.</div>
+<div class="lab">Что вводить</div><div class="ex"><span>Иванов Иван Иванович</span><span>0000-0002-1825-0097</span><span>AAA-1234-2020/57000000000</span></div>
+<div class="lab">Что получите</div><ul class="get"><li>Индекс Хирша — наибольший, с базой</li><li>Профили ORCID, Scopus, WoS, eLibrary — ссылками</li><li>Все статьи с квартилем и Белым списком</li><li>Corresponding и организация в каждой статье</li></ul>
+<div class="msrc"><b>Откуда:</b> OpenAlex, реестр ORCID · организация никуда не отправляется</div><div class="mgo">Начать →</div></button>
+<button class="mcard" data-p="secJ"><div class="hd"><span class="n">02</span><span class="t">Журнал</span><span class="k">Alt+2</span></div>
+<div class="lead">Быстрая справка по изданию: квартиль, импакт-фактор и Белый список на нужный год.</div>
+<div class="lab">Что вводить</div><div class="ex"><span>Nature</span><span>0028-0836</span><span>Phys. Rev. B</span></div>
+<div class="lab">Что получите</div><ul class="get"><li>Квартиль SCImago — на год и по годам</li><li>Импакт-фактор и уровень Белого списка</li><li>CiteScore Scopus и индексация WoS · Scopus · RSCI</li><li>Ссылки для перепроверки</li></ul>
+<div class="msrc"><b>Откуда:</b> SCImago, Белый список, Scopus, CiteScore — встроены, без интернета</div><div class="mgo">Начать →</div></button>
+<button class="mcard" data-p="secL"><div class="hd"><span class="n">03</span><span class="t">Публикации</span><span class="k">Alt+3</span></div>
+<div class="lead">Проверка списка статей: что заявлено и что на самом деле в базах.</div>
+<div class="lab">Что вводить</div><div class="ex"><span>снимок списка — Ctrl+V</span><span>документ PDF или Word</span><span>1. Иванов И.И. Название… 2023</span></div>
+<div class="lab">Что получите</div><ul class="get"><li>Квартиль и Белый список на год публикации</li><li>Импакт-фактор и CiteScore</li><li>Corresponding, первый и последний автор</li><li>Дубли и спорные записи — «проверьте»</li></ul>
+<div class="msrc"><b>Откуда:</b> Crossref, OpenAlex · снимок и документ читаются на компьютере</div><div class="mgo">Начать →</div></button>
+</div>
 <div class="seg noprint" id="seg" role="tablist">
 <button data-p="secA" role="tab"><span class="n">01</span><span class="t">Автор<span class="dot" title="здесь уже есть введённое"></span></span><span class="h">ФИО, ORCID, Scopus ID — Хирш, профили, все статьи</span><span class="k">Alt+1</span></button>
 <button data-p="secJ" role="tab"><span class="n">02</span><span class="t">Журнал<span class="dot" title="здесь уже есть введённое"></span></span><span class="h">название или ISSN — квартиль, импакт-фактор, БС</span><span class="k">Alt+2</span></button>

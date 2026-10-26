@@ -40,7 +40,7 @@ const AID = { Sokolova: 'A1', Orlov: 'A2', Lebedev: 'A3' }, ANAME = { A1: 'Anna 
   const toHome = async sel => { if (typeof sel !== 'string' || !HOME_SEL.test(sel)) return;
     if (await pg.evaluate(() => document.body.dataset.view !== 'home').catch(() => false)) { await pg.click('#rback'); await pg.waitForFunction(() => document.body.dataset.view === 'home', null, { timeout: 5000 }); }
     const pane = await pg.evaluate(s => { const el = document.querySelector(s); const c = el && el.closest('#inp .col'); return c && !c.classList.contains('on') ? c.id : ''; }, sel.split(/[ :]/)[0]).catch(() => '');
-    if (pane) await pg.click('#seg button[data-p="' + pane + '"]'); };
+    if (pane) await pg.click((await pg.evaluate(() => document.getElementById('home').classList.contains('picked')) ? '#seg button' : '#menu .mcard') + '[data-p="' + pane + '"]'); };
   // так же к таблицам и кнопкам результата — открыть нужную подстраницу (вкладку), как сделал бы человек
   const VIEW_SEL = [[/^#(outList|retry|xlsx|csv|copy)\b/, 'list'], [/^#(outAuthor|hx|acopy|axlsx|acsv)/, 'author'], [/^#(outJournal|jcopy|jxlsx|jcsv)\b/, 'journals']];
   const toView = async sel => { const m = typeof sel === 'string' && VIEW_SEL.find(([re]) => re.test(sel)); if (!m) return toHome(sel); if (await pg.evaluate(v => document.body.dataset.view !== v && viewHas(v), m[1]).catch(() => false)) { await pg.evaluate(v => setView(v), m[1]); } };
@@ -86,9 +86,10 @@ const AID = { Sokolova: 'A1', Orlov: 'A2', Lebedev: 'A3' }, ANAME = { A1: 'Anna 
   // 0.9: начальный экран «Что проверяем» — при открытии ни один раздел не выбран; кнопка открывает только свой раздел;
   // введённое при переключении сохраняется, точка — у раздела с введённым; Alt+3 — «Публикации» (ожидания записаны до прогона)
   { await pg.waitForFunction(() => typeof REF !== 'undefined' && REF, null, { timeout: 60000 });
-    const st0 = await pg.evaluate(() => ({ btn: document.querySelectorAll('#seg button').length, open: [...document.querySelectorAll('#inp .col')].filter(c => c.offsetParent).length }));
-    T('0.9 начальный экран: три кнопки, ни один раздел не открыт', st0.btn === 3 && st0.open === 0, st0);
-    await pg.click('#seg button[data-p="secJ"]'); await pg.keyboard.type('Nature');
+    const st0 = await pg.evaluate(() => ({ cards: [...document.querySelectorAll('#menu .mcard')].filter(c => c.offsetParent).length, h: Math.round(document.querySelector('#menu .mcard').getBoundingClientRect().height), seg: !!document.getElementById('seg').offsetParent, open: [...document.querySelectorAll('#inp .col')].filter(c => c.offsetParent).length, txt: document.getElementById('menu').textContent }));
+    T('0.9 главное меню: три большие карточки (от 400 точек высотой) с «Что вводить», «Что получите», «Откуда»; полоса и разделы скрыты', st0.cards === 3 && st0.h >= 400 && !st0.seg && st0.open === 0 && (st0.txt.match(/Что вводить/g) || []).length === 3 && (st0.txt.match(/Откуда/g) || []).length === 3, Object.assign({}, st0, { txt: st0.txt.length }));
+    await pg.click('#menu .mcard[data-p="secJ"]');
+    T('0.9 главное меню: после выбора карточки свернулись в полосу', await pg.evaluate(() => !document.getElementById('menu').offsetParent && !!document.getElementById('seg').offsetParent), true); await pg.keyboard.type('Nature');
     const st1 = await pg.evaluate(() => ({ vis: [...document.querySelectorAll('#inp .col')].filter(c => c.offsetParent).map(c => c.id).join(), focus: document.activeElement.id }));
     await pg.click('#seg button[data-p="secA"]');
     const st2 = await pg.evaluate(() => ({ vis: [...document.querySelectorAll('#inp .col')].filter(c => c.offsetParent).map(c => c.id).join(), jq: document.getElementById('jq').value, dotJ: document.querySelector('#seg button[data-p="secJ"] .dot').classList.contains('on') }));
