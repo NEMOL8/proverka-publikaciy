@@ -214,6 +214,6 @@ function docOn(i, v) { DOC.recs[i].on = v; renderDoc(); }
 function docEdit(i, v) { DOC.recs[i].text = v; }
 /* в поле списка — сплошная нумерация 1, 2, 3…: в документе номера могут начинаться заново в каждом разделе */
 function docText() { return DOC.recs.filter(r => r.on && r.text.trim()).map((r, k) => (k + 1) + '. ' + r.text.replace(/\s+/g, ' ').trim().replace(/^(?:\[\d{1,3}\]|\d{1,3}\s*[.)])\s*/, '')).join('\n'); }
-function docAdd() { if (!DOC) return; $('list').value = docText() + '\n'; countEntries(); DOC = null; renderDoc(); saveState(true); goTo('inp'); }
+function docAdd() { if (!DOC) return; $('list').value = docText() + '\n'; countEntries(); DOC = null; renderDoc(); saveState(true); goTo('secL'); }
 function docRun() { if (!DOC) return; $('list').value = docText() + '\n'; countEntries(); DOC = null; renderDoc(); runList(); }
 function docClose() { DOC = null; renderDoc(); }

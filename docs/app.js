@@ -158,7 +158,7 @@ if (typeof module !== 'undefined') module.exports = { SUBFIELD_RU, subRu };
 const VERSION = '0.9', VERSION_DATE = '26.10.2026';
 /* Что нового — показывается на странице */
 const CHANGES = [
-  ['0.9', '26.10.2026', ['Новый порядок разделов: 01 Автор · 02 Журнал · 03 Публикации — друг под другом, как раньше.',
+  ['0.9', '26.10.2026', ['Начальный экран «Что проверяем»: три большие кнопки — Автор, Журнал, Публикации (Alt+1, Alt+2, Alt+3); под ними только выбранный раздел. При каждом открытии ни один раздел не выбран; введённое при переключении сохраняется. Снимок (Ctrl+V) или перетащенный документ сами открывают «Публикации».',
     'Результат открывается на отдельной подстранице: «← Новый поиск» (введённое в поля сохраняется), вкладки «Автор · Журналы · Публикации», кнопки «Скопировать · Excel · CSV · Печать». Кнопки «Назад» и «Вперёд» браузера работают.',
     'Подсказки при вводе журнала: под полем — подходящие журналы из справочников, по началу названия или любого слова, с ISSN и пометками SCImago, Белого списка и Scopus; выбор мышью или стрелками и Enter.',
     'Кнопки-наборы фильтра «Q1–Q2 или БС 1» и «Q1 или БС 1» — в таблице публикаций из списка и у автора.',
@@ -1653,7 +1653,7 @@ function restoreState(st) {
   if (st.profDropped && $('author').value.trim()) AU.msgs = (AU.msgs || []).concat(['публикации автора не поместились в память браузера — нажмите «Найти автора» (ответы баз возьмутся из кеша)']);
   if (st.W) { W.entries = st.W.entries; W.works = st.W.works.map(w => w === '__u' ? undefined : w); W.netDown = st.W.netDown; W.auto = st.W.auto; W.numbered = st.W.numbered; W.stopped = st.W.stopped; rejudge(); }
   if (st.J) { $('jq').value = st.J.q || ''; $('jy').value = st.J.year || ''; JR.year = st.J.year || null; JR.rows = $('jq').value.split('\n').map(s => s.trim()).filter(Boolean).slice(0, 300).map((q, i) => { const res = findJournalQuery(q); const pk = st.J.picks[i]; return { q, res, pick: pk != null && res.hits[pk] ? pk : (res.sure ? res.hits.indexOf(res.sure) : null) }; }); }
-  renderAll(); retryVis(); goTo(W.entries ? 'outList' : (st.AU ? 'outAuthor' : 'outJournal'));
+  renderAll(); retryVis(); if (typeof updDots === 'function') updDots(); goTo(W.entries ? 'outList' : (st.AU ? 'outAuthor' : 'outJournal'));
 }
 
 /* ----- 10. Отметка «проверено» по строке ----- */
@@ -1752,13 +1752,13 @@ async function init() {
   $('dfile').addEventListener('change', e => { readDocument([...e.target.files]); e.target.value = ''; });
   $('jgo').addEventListener('click', runJournals); $('jcopy').addEventListener('click', copyJournals); $('jxlsx').addEventListener('click', () => exportJournals('xlsx')); $('jcsv').addEventListener('click', () => exportJournals('csv'));
   $('jq').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); runJournals(); } });
-  document.addEventListener('paste', e => { const im = [...(e.clipboardData ? e.clipboardData.items : [])].filter(i => i.type.startsWith('image/')).map(i => i.getAsFile()); if (!im.length) return; e.preventDefault(); if (document.activeElement === $('author')) authorImage(im); else if (document.activeElement && document.activeElement.id === 'hxText') hxImage(im); else addImages(im); });
+  document.addEventListener('paste', e => { const im = [...(e.clipboardData ? e.clipboardData.items : [])].filter(i => i.type.startsWith('image/')).map(i => i.getAsFile()); if (!im.length) return; e.preventDefault(); if (document.activeElement === $('author')) authorImage(im); else if (document.activeElement && document.activeElement.id === 'hxText') hxImage(im); else { if (document.body.dataset.view !== 'home') setView('home'); openPane('secL'); addImages(im); } });
   // снимок можно перетащить в любое место страницы (удобство 7); на поле автора — снимок с идентификаторами
   const hasFiles = e => e.dataTransfer && [...(e.dataTransfer.types || [])].indexOf('Files') >= 0; let dragN = 0;
   document.addEventListener('dragenter', e => { if (!hasFiles(e)) return; e.preventDefault(); dragN++; document.body.classList.add('dragging'); });
   document.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
   document.addEventListener('dragleave', e => { if (!hasFiles(e)) return; if (--dragN <= 0) { dragN = 0; document.body.classList.remove('dragging'); } });
-  document.addEventListener('drop', e => { if (!hasFiles(e)) return; e.preventDefault(); dragN = 0; document.body.classList.remove('dragging'); const docs = [...e.dataTransfer.files].filter(f => /\.(pdf|docx?)$/i.test(f.name) || f.type === 'application/pdf'); if (docs.length) { readDocument(docs); return; } const im = [...e.dataTransfer.files].filter(f => f.type.startsWith('image/')); if (!im.length) return; if (e.target && e.target.closest && e.target.closest('#author')) authorImage(im); else addImages(im); });
+  document.addEventListener('drop', e => { if (!hasFiles(e)) return; e.preventDefault(); dragN = 0; document.body.classList.remove('dragging'); const docs = [...e.dataTransfer.files].filter(f => /\.(pdf|docx?)$/i.test(f.name) || f.type === 'application/pdf'); if (docs.length) { if (document.body.dataset.view !== 'home') setView('home'); openPane('secL'); readDocument(docs); return; } const im = [...e.dataTransfer.files].filter(f => f.type.startsWith('image/')); if (!im.length) return; if (e.target && e.target.closest && e.target.closest('#author')) authorImage(im); else { if (document.body.dataset.view !== 'home') setView('home'); openPane('secL'); addImages(im); } });
   $('go').addEventListener('click', runList); $('ago').addEventListener('click', runAuthor); $('anew').addEventListener('click', resetAuthor); $('ping').addEventListener('click', ping); $('self').addEventListener('click', selfCheck); $('copy').addEventListener('click', copyList); $('acopy').addEventListener('click', copyAuthor);
   $('list').addEventListener('input', () => { countEntries(); saveState(true); }); $('author').addEventListener('input', () => { showParsed(); saveState(true); });
   $('author').addEventListener('keydown', e => { if (e.key === 'Enter') runAuthor(); });
@@ -1768,7 +1768,7 @@ async function init() {
   window.addEventListener('hashchange', () => { applyView(viewFromHash()); window.scrollTo(0, 0); });
   // строка состояния поиска видна и на подстранице результата
   [['status', 'statusR'], ['astatus', 'astatusR'], ['jstatus', 'jstatusR']].forEach(([a, b]) => { const m = () => { $(b).innerHTML = $(a).innerHTML; }; new MutationObserver(m).observe($(a), { childList: true, characterData: true, subtree: true }); });
-  initJsug();
+  initJsug(); initPanes();
   try { $('oaKey').value = localStorage.getItem('pc_oaKey') || ''; $('orcidToken').value = localStorage.getItem('pc_orcidToken') || ''; } catch (e) { }
   if (OA_BUILTIN) { $('oaKey').placeholder = 'встроенный ключ уже подключён — поле можно не заполнять'; }
   if (ORCID_BUILTIN) { $('orcidToken').placeholder = 'встроенный токен уже подключён — поле можно не заполнять'; $('orcidNote').textContent = 'В эту сборку встроен токен ORCID. Своё значение в поле заменит его только в этом браузере.'; }
@@ -1914,6 +1914,7 @@ function setView(v) { if (v !== 'home' && !viewHas(v)) v = 'home'; if (viewFromH
 function goTo(id) {
   const v = VIEW_OF[id] || 'home', was = document.body.dataset.view; setView(v);
   const el = $(id); if (!el) return;
+  if (v === 'home') { const sec = el.closest && el.closest('#inp .col'); if (sec) openPane(sec.id); }
   if (id === 'outList' || id === 'outAuthor' || id === 'outJournal' || (v === 'home' && was !== 'home')) { window.scrollTo(0, 0); return; }
   try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { el.scrollIntoView(); }
 }
@@ -2252,7 +2253,7 @@ function resetAuthor() {
   $('author').value = ''; $('org').value = ''; $('aparsed').textContent = ''; $('astatus').textContent = '';
   $('outAuthor').innerHTML = ''; $('auOut').style.display = 'none';
   if (W.entries) { rejudge(); renderList(); }
-  updateNav(); goTo('inp'); $('author').focus(); saveState();
+  updateNav(); goTo('secA'); $('author').focus(); updDots(); saveState();
 }
 /* Поиск по ФИО. Возвращает автора, если он определён однозначно, иначе заполняет S.cands для выбора. */
 async function nameSearch(S, fios) {
@@ -2690,7 +2691,7 @@ function docOn(i, v) { DOC.recs[i].on = v; renderDoc(); }
 function docEdit(i, v) { DOC.recs[i].text = v; }
 /* в поле списка — сплошная нумерация 1, 2, 3…: в документе номера могут начинаться заново в каждом разделе */
 function docText() { return DOC.recs.filter(r => r.on && r.text.trim()).map((r, k) => (k + 1) + '. ' + r.text.replace(/\s+/g, ' ').trim().replace(/^(?:\[\d{1,3}\]|\d{1,3}\s*[.)])\s*/, '')).join('\n'); }
-function docAdd() { if (!DOC) return; $('list').value = docText() + '\n'; countEntries(); DOC = null; renderDoc(); saveState(true); goTo('inp'); }
+function docAdd() { if (!DOC) return; $('list').value = docText() + '\n'; countEntries(); DOC = null; renderDoc(); saveState(true); goTo('secL'); }
 function docRun() { if (!DOC) return; $('list').value = docText() + '\n'; countEntries(); DOC = null; renderDoc(); runList(); }
 function docClose() { DOC = null; renderDoc(); }
 
@@ -2758,5 +2759,26 @@ function sourcesList() {
 function renderSources() {
   const L = sourcesList(); if ($('srcList')) $('srcList').innerHTML = L.map(x => '<li>' + esc(x) + '</li>').join('');
   if ($('srcFoot')) $('srcFoot').innerHTML = L.length ? '<div class="cap" style="margin-bottom:4px">Источники данных</div><ul style="margin:0">' + L.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>' : '';
+}
+
+/* ----- Начальный экран «Что проверяем» (0.9): три кнопки, под ними только выбранный раздел.
+   При каждом открытии страницы ни один раздел не выбран (Герман, 26.10.2026). В пределах захода «← Новый поиск»
+   возвращает к тому разделу, из которого искали. Введённое при переключении не теряется; точка — в разделе уже что-то введено. */
+let PANE = '';
+function openPane(id, focus) {
+  if (!$(id)) return; PANE = id;
+  document.querySelectorAll('#inp .col').forEach(c => c.classList.toggle('on', c.id === id));
+  document.querySelectorAll('#seg button').forEach(b => { const on = b.dataset.p === id; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
+  updDots();
+  if (focus) { const f = { secA: 'author', secJ: 'jq', secL: 'list' }[id]; if ($(f)) $(f).focus(); }
+}
+function updDots() {
+  const has = { secA: !!($('author').value.trim() || $('org').value.trim()), secJ: !!$('jq').value.trim(), secL: !!($('list').value.trim() || (typeof DOC !== 'undefined' && DOC)) };
+  document.querySelectorAll('#seg button').forEach(b => { const d = b.querySelector('.dot'); if (d) d.classList.toggle('on', !!has[b.dataset.p] && b.dataset.p !== PANE); });
+}
+function initPanes() {
+  $('seg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) openPane(b.dataset.p, true); });
+  document.addEventListener('keydown', e => { if (e.altKey && !e.ctrlKey && !e.metaKey && ['1', '2', '3'].indexOf(e.key) >= 0) { e.preventDefault(); if (document.body.dataset.view !== 'home') setView('home'); openPane(['secA', 'secJ', 'secL'][+e.key - 1], true); } });
+  ['author', 'org', 'jq', 'list'].forEach(id => $(id).addEventListener('input', updDots));
 }
 

@@ -24,13 +24,13 @@ async function init() {
   $('dfile').addEventListener('change', e => { readDocument([...e.target.files]); e.target.value = ''; });
   $('jgo').addEventListener('click', runJournals); $('jcopy').addEventListener('click', copyJournals); $('jxlsx').addEventListener('click', () => exportJournals('xlsx')); $('jcsv').addEventListener('click', () => exportJournals('csv'));
   $('jq').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); runJournals(); } });
-  document.addEventListener('paste', e => { const im = [...(e.clipboardData ? e.clipboardData.items : [])].filter(i => i.type.startsWith('image/')).map(i => i.getAsFile()); if (!im.length) return; e.preventDefault(); if (document.activeElement === $('author')) authorImage(im); else if (document.activeElement && document.activeElement.id === 'hxText') hxImage(im); else addImages(im); });
+  document.addEventListener('paste', e => { const im = [...(e.clipboardData ? e.clipboardData.items : [])].filter(i => i.type.startsWith('image/')).map(i => i.getAsFile()); if (!im.length) return; e.preventDefault(); if (document.activeElement === $('author')) authorImage(im); else if (document.activeElement && document.activeElement.id === 'hxText') hxImage(im); else { if (document.body.dataset.view !== 'home') setView('home'); openPane('secL'); addImages(im); } });
   // снимок можно перетащить в любое место страницы (удобство 7); на поле автора — снимок с идентификаторами
   const hasFiles = e => e.dataTransfer && [...(e.dataTransfer.types || [])].indexOf('Files') >= 0; let dragN = 0;
   document.addEventListener('dragenter', e => { if (!hasFiles(e)) return; e.preventDefault(); dragN++; document.body.classList.add('dragging'); });
   document.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
   document.addEventListener('dragleave', e => { if (!hasFiles(e)) return; if (--dragN <= 0) { dragN = 0; document.body.classList.remove('dragging'); } });
-  document.addEventListener('drop', e => { if (!hasFiles(e)) return; e.preventDefault(); dragN = 0; document.body.classList.remove('dragging'); const docs = [...e.dataTransfer.files].filter(f => /\.(pdf|docx?)$/i.test(f.name) || f.type === 'application/pdf'); if (docs.length) { readDocument(docs); return; } const im = [...e.dataTransfer.files].filter(f => f.type.startsWith('image/')); if (!im.length) return; if (e.target && e.target.closest && e.target.closest('#author')) authorImage(im); else addImages(im); });
+  document.addEventListener('drop', e => { if (!hasFiles(e)) return; e.preventDefault(); dragN = 0; document.body.classList.remove('dragging'); const docs = [...e.dataTransfer.files].filter(f => /\.(pdf|docx?)$/i.test(f.name) || f.type === 'application/pdf'); if (docs.length) { if (document.body.dataset.view !== 'home') setView('home'); openPane('secL'); readDocument(docs); return; } const im = [...e.dataTransfer.files].filter(f => f.type.startsWith('image/')); if (!im.length) return; if (e.target && e.target.closest && e.target.closest('#author')) authorImage(im); else { if (document.body.dataset.view !== 'home') setView('home'); openPane('secL'); addImages(im); } });
   $('go').addEventListener('click', runList); $('ago').addEventListener('click', runAuthor); $('anew').addEventListener('click', resetAuthor); $('ping').addEventListener('click', ping); $('self').addEventListener('click', selfCheck); $('copy').addEventListener('click', copyList); $('acopy').addEventListener('click', copyAuthor);
   $('list').addEventListener('input', () => { countEntries(); saveState(true); }); $('author').addEventListener('input', () => { showParsed(); saveState(true); });
   $('author').addEventListener('keydown', e => { if (e.key === 'Enter') runAuthor(); });
@@ -40,7 +40,7 @@ async function init() {
   window.addEventListener('hashchange', () => { applyView(viewFromHash()); window.scrollTo(0, 0); });
   // строка состояния поиска видна и на подстранице результата
   [['status', 'statusR'], ['astatus', 'astatusR'], ['jstatus', 'jstatusR']].forEach(([a, b]) => { const m = () => { $(b).innerHTML = $(a).innerHTML; }; new MutationObserver(m).observe($(a), { childList: true, characterData: true, subtree: true }); });
-  initJsug();
+  initJsug(); initPanes();
   try { $('oaKey').value = localStorage.getItem('pc_oaKey') || ''; $('orcidToken').value = localStorage.getItem('pc_orcidToken') || ''; } catch (e) { }
   if (OA_BUILTIN) { $('oaKey').placeholder = 'встроенный ключ уже подключён — поле можно не заполнять'; }
   if (ORCID_BUILTIN) { $('orcidToken').placeholder = 'встроенный токен уже подключён — поле можно не заполнять'; $('orcidNote').textContent = 'В эту сборку встроен токен ORCID. Своё значение в поле заменит его только в этом браузере.'; }
@@ -186,6 +186,7 @@ function setView(v) { if (v !== 'home' && !viewHas(v)) v = 'home'; if (viewFromH
 function goTo(id) {
   const v = VIEW_OF[id] || 'home', was = document.body.dataset.view; setView(v);
   const el = $(id); if (!el) return;
+  if (v === 'home') { const sec = el.closest && el.closest('#inp .col'); if (sec) openPane(sec.id); }
   if (id === 'outList' || id === 'outAuthor' || id === 'outJournal' || (v === 'home' && was !== 'home')) { window.scrollTo(0, 0); return; }
   try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { el.scrollIntoView(); }
 }
@@ -524,7 +525,7 @@ function resetAuthor() {
   $('author').value = ''; $('org').value = ''; $('aparsed').textContent = ''; $('astatus').textContent = '';
   $('outAuthor').innerHTML = ''; $('auOut').style.display = 'none';
   if (W.entries) { rejudge(); renderList(); }
-  updateNav(); goTo('inp'); $('author').focus(); saveState();
+  updateNav(); goTo('secA'); $('author').focus(); updDots(); saveState();
 }
 /* Поиск по ФИО. Возвращает автора, если он определён однозначно, иначе заполняет S.cands для выбора. */
 async function nameSearch(S, fios) {

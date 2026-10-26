@@ -41,7 +41,7 @@ function restoreState(st) {
   if (st.profDropped && $('author').value.trim()) AU.msgs = (AU.msgs || []).concat(['публикации автора не поместились в память браузера — нажмите «Найти автора» (ответы баз возьмутся из кеша)']);
   if (st.W) { W.entries = st.W.entries; W.works = st.W.works.map(w => w === '__u' ? undefined : w); W.netDown = st.W.netDown; W.auto = st.W.auto; W.numbered = st.W.numbered; W.stopped = st.W.stopped; rejudge(); }
   if (st.J) { $('jq').value = st.J.q || ''; $('jy').value = st.J.year || ''; JR.year = st.J.year || null; JR.rows = $('jq').value.split('\n').map(s => s.trim()).filter(Boolean).slice(0, 300).map((q, i) => { const res = findJournalQuery(q); const pk = st.J.picks[i]; return { q, res, pick: pk != null && res.hits[pk] ? pk : (res.sure ? res.hits.indexOf(res.sure) : null) }; }); }
-  renderAll(); retryVis(); goTo(W.entries ? 'outList' : (st.AU ? 'outAuthor' : 'outJournal'));
+  renderAll(); retryVis(); if (typeof updDots === 'function') updDots(); goTo(W.entries ? 'outList' : (st.AU ? 'outAuthor' : 'outJournal'));
 }
 
 /* ----- 10. Отметка «проверено» по строке ----- */

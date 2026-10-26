@@ -63,3 +63,24 @@ function renderSources() {
   const L = sourcesList(); if ($('srcList')) $('srcList').innerHTML = L.map(x => '<li>' + esc(x) + '</li>').join('');
   if ($('srcFoot')) $('srcFoot').innerHTML = L.length ? '<div class="cap" style="margin-bottom:4px">Источники данных</div><ul style="margin:0">' + L.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>' : '';
 }
+
+/* ----- Начальный экран «Что проверяем» (0.9): три кнопки, под ними только выбранный раздел.
+   При каждом открытии страницы ни один раздел не выбран (Герман, 26.10.2026). В пределах захода «← Новый поиск»
+   возвращает к тому разделу, из которого искали. Введённое при переключении не теряется; точка — в разделе уже что-то введено. */
+let PANE = '';
+function openPane(id, focus) {
+  if (!$(id)) return; PANE = id;
+  document.querySelectorAll('#inp .col').forEach(c => c.classList.toggle('on', c.id === id));
+  document.querySelectorAll('#seg button').forEach(b => { const on = b.dataset.p === id; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
+  updDots();
+  if (focus) { const f = { secA: 'author', secJ: 'jq', secL: 'list' }[id]; if ($(f)) $(f).focus(); }
+}
+function updDots() {
+  const has = { secA: !!($('author').value.trim() || $('org').value.trim()), secJ: !!$('jq').value.trim(), secL: !!($('list').value.trim() || (typeof DOC !== 'undefined' && DOC)) };
+  document.querySelectorAll('#seg button').forEach(b => { const d = b.querySelector('.dot'); if (d) d.classList.toggle('on', !!has[b.dataset.p] && b.dataset.p !== PANE); });
+}
+function initPanes() {
+  $('seg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) openPane(b.dataset.p, true); });
+  document.addEventListener('keydown', e => { if (e.altKey && !e.ctrlKey && !e.metaKey && ['1', '2', '3'].indexOf(e.key) >= 0) { e.preventDefault(); if (document.body.dataset.view !== 'home') setView('home'); openPane(['secA', 'secJ', 'secL'][+e.key - 1], true); } });
+  ['author', 'org', 'jq', 'list'].forEach(id => $(id).addEventListener('input', updDots));
+}

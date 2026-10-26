@@ -46,8 +46,24 @@ ul{margin:4px 0 8px;padding-left:20px}
 details.adv{margin-top:8px}details.adv>summary{font-weight:400;color:var(--dim)}
 .card{background:var(--sheet);border-top:1px solid var(--beige);padding:14px 18px;margin-top:12px}
 /* ----- главная: три колонки-раздела 01 Автор · 02 Журнал · 03 Публикации (правка 1) ----- */
-.cols{display:grid;grid-template-columns:1fr;gap:12px;margin-top:16px}
-.col{background:var(--sheet);border-top:1px solid var(--beige);padding:16px 18px 18px;min-width:0}
+.cols{margin-top:18px}
+/* 0.9: начальный экран «Что проверяем» — три большие кнопки; под ними только выбранный раздел. При открытии страницы ни один не выбран */
+.ask{margin:26px 0 12px;font-size:11.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);background:#fff}
+.seg button{all:unset;cursor:pointer;padding:18px 22px 16px;border-right:1px solid var(--line);position:relative}
+.seg button:last-child{border-right:0}
+.seg button:focus-visible{outline:2px solid var(--beige);outline-offset:-2px}
+.seg .n{font-family:var(--mono);font-size:12px;color:var(--beige);font-weight:500}
+.seg .t{display:block;font-size:20px;font-weight:600;color:var(--acc);margin-top:2px}
+.seg .h{display:block;font-size:12.5px;color:var(--dim);margin-top:2px}
+.seg .k{position:absolute;right:16px;top:16px;font-family:var(--mono);font-size:11px;color:var(--dim)}
+.seg button:hover{background:#fbf8f3}
+.seg button.on{background:var(--acc)}.seg button.on .t{color:#fff}.seg button.on .h{color:#d9cfc2}.seg button.on .k{color:#bfb3a5}
+.seg button.on::after{content:"";position:absolute;left:50%;bottom:-9px;margin-left:-8px;border:8px solid transparent;border-bottom:0;border-top-color:var(--acc)}
+.seg .dot{display:none;width:6px;height:6px;border-radius:50%;background:#7aa77f;margin-left:6px;vertical-align:3px}.seg .dot.on{display:inline-block}
+.col{display:none}.col.on{display:block}
+@media(max-width:760px){.seg{grid-template-columns:1fr}.seg button{border-right:0;border-bottom:1px solid var(--line)}.seg .k{display:none}.seg button.on::after{display:none}}
+.col{background:var(--sheet);border-top:1px solid var(--beige);padding:22px 26px 24px;min-width:0}
 .col .cn{font-family:var(--mono);font-size:12px;color:var(--beige);font-weight:500}
 .col h2{margin:0 0 12px;font-size:12px}
 .col p{margin:10px 0 0}
@@ -175,6 +191,7 @@ tr.done>td{background:#f1f8f1}td .mk{display:block;margin-top:4px;font-size:11.5
 <li><b>Автор</b> (раздел 01): ФИО кириллицей или латиницей, ORCID, Scopus ID, ResearcherID или строка идентификаторов целиком. Организация рядом помогает отличить однофамильцев: если по ней совпал ровно один человек с полным именем — он выбирается сам. Покажутся индекс Хирша, ссылки на все профили автора и все его публикации. Если по ФИО найдено несколько человек — выберите нужного кнопкой «Это он». Кнопка «Найти другого автора» очищает поле и результат, список публикаций остаётся.</li>
 <li><b>Журнал</b> (раздел 02): название или ISSN, по одному в строке — квартиль SCImago, импакт-фактор, уровень Белого списка, CiteScore Scopus и индексация, сейчас и по годам. При вводе названия под полем появляются подходящие журналы — выбор мышью или стрелками и Enter.</li>
 <li><b>Публикации</b> (раздел 03): вставьте снимок списка (Ctrl+V) или текст и нажмите «Найти публикации». Сверьте распознанный текст со снимком. По каждой статье — квартиль SCImago и уровень Белого списка на год публикации (и сейчас, если отличается), импакт-фактор, CiteScore Scopus, авторы и corresponding author, ссылки. Если утилита сомневается, какая это статья, — покажет варианты с кнопкой «Это она».</li>
+<li>При открытии — начальный экран «Что проверяем»: три кнопки (Автор, Журнал, Публикации; или Alt+1, Alt+2, Alt+3), под ними — только выбранный раздел. Введённое при переключении сохраняется; точка у кнопки — в разделе уже что-то введено. Снимок (Ctrl+V) или перетащенный документ сами открывают «Публикации».</li>
 <li>Результат открывается на отдельной подстранице: вверху «← Новый поиск» (введённое в поля сохраняется), вкладки «Автор · Журналы · Публикации» и кнопки «Скопировать · Excel · CSV · Печать». Кнопки «Назад» и «Вперёд» браузера тоже работают.</li>
 <li><b>Документ</b> (PDF или Word) можно загрузить в раздел 03: утилита найдёт в нём раздел со списком публикаций (или таблицу публикаций), покажет найденные записи — уберите лишние и нажмите «Проверить отмеченные». Квартиль и импакт-фактор, указанные в документе, показываются рядом с найденными («в списке: …»).</li>
 <li>Снимок можно делать прямо со страницы базы (ORCID, Google Scholar, Scopus, eLibrary, Web of Science): кнопки, пагинация и счётчики цитирований в текст записи не попадут.</li>
@@ -199,8 +216,14 @@ tr.done>td{background:#f1f8f1}td .mk{display:block;margin-top:4px;font-size:11.5
 <details class="adv"><summary>Дополнительно</summary><div style="max-width:420px"><label for="oaKey">Свой ключ OpenAlex</label><input type="text" id="oaKey"><div class="dim">Ключ OpenAlex уже встроен в страницу — поле заполнять не нужно. Своё значение нужно, только если встроенный дневной лимит закончился (OpenAlex отвечает «база ограничила число запросов»). Хранится только в этом браузере.</div></div></details>
 </details>
 </div>
+<div class="ask noprint">Что проверяем</div>
+<div class="seg noprint" id="seg" role="tablist">
+<button data-p="secA" role="tab"><span class="n">01</span><span class="t">Автор<span class="dot" title="здесь уже есть введённое"></span></span><span class="h">ФИО, ORCID, Scopus ID — Хирш, профили, все статьи</span><span class="k">Alt+1</span></button>
+<button data-p="secJ" role="tab"><span class="n">02</span><span class="t">Журнал<span class="dot" title="здесь уже есть введённое"></span></span><span class="h">название или ISSN — квартиль, импакт-фактор, БС</span><span class="k">Alt+2</span></button>
+<button data-p="secL" role="tab"><span class="n">03</span><span class="t">Публикации<span class="dot" title="здесь уже есть введённое"></span></span><span class="h">список, снимок, PDF или Word</span><span class="k">Alt+3</span></button>
+</div>
 <div id="inp" class="cols noprint">
-<section class="col" id="secA"><div class="cn">01</div><h2>Автор и все его публикации</h2>
+<section class="col" id="secA">
 <div class="row"><div style="flex:3 1 380px"><label for="author">ФИО, ORCID, Scopus ID, ResearcherID — или строка с несколькими идентификаторами</label>
 <input type="text" id="author" placeholder="Иванов Иван Иванович   или   AAA-1234-2020/57000000000/0000-0002-1825-0097">
 <div class="dim">Снимок с идентификаторами — Ctrl+V в это поле или <input type="file" id="afile" accept="image/*">. Порядок значений не важен.</div>
@@ -208,14 +231,14 @@ tr.done>td{background:#f1f8f1}td .mk{display:block;margin-top:4px;font-size:11.5
 <div id="aparsed" class="dim" style="margin-top:6px"></div>
 <p><button id="ago">Найти автора</button> <button id="anew" class="sec">Найти другого автора</button> <span id="astatus" class="dim"></span></p>
 </section>
-<section class="col" id="secJ"><div class="cn">02</div><h2>Журнал: квартиль и импакт-фактор</h2>
+<section class="col" id="secJ">
 <div class="row"><div style="flex:4 1 380px"><label for="jq">Название журнала или ISSN — по одному в строке</label>
 <div class="jwrap"><textarea id="jq" style="min-height:96px" autocomplete="off" placeholder="Nature&#10;0028-0836&#10;Журнал технической физики&#10;Phys. Rev. B&#10;&#10;Ctrl+Enter — найти"></textarea><div id="jsug" role="listbox"></div></div>
 <div class="dim">Ищется во встроенных справочниках (SCImago, Белый список<span id="jsc"></span>) — без интернета. При вводе — подсказки; название можно с опечатками и сокращениями; ISSN — надёжнее.</div>
 </div><div style="flex:1 1 150px"><label for="jy">Год <span style="font-weight:400">(необязательно)</span></label><input type="number" id="jy" min="1999" max="2100" placeholder="например, 2023"><div class="dim">Квартиль и уровень Белого списка — на этот год.</div></div></div>
 <p><button id="jgo">Найти журналы</button> <span id="jstatus" class="dim"></span></p>
 </section>
-<section class="col" id="secL"><div class="cn">03</div><h2>Публикации: список, снимок, документ</h2>
+<section class="col" id="secL">
 <div id="drop">Вставьте снимок (Ctrl+V), перетащите его сюда или <input type="file" id="file" accept="image/*" multiple> — либо вставьте список текстом ниже.
 <div style="margin-top:4px"><b>Документ PDF или Word</b> — утилита сама найдёт в нём список публикаций: <input type="file" id="dfile" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"> <span class="dim">(или перетащите файл сюда; документ читается на этом компьютере и никуда не отправляется)</span></div>
 <div class="dim">eLibrary: список публикаций на странице можно выделить мышью и скопировать — текстом точнее, чем снимком.</div>

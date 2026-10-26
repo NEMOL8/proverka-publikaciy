@@ -36,7 +36,11 @@ const AID = { Sokolova: 'A1', Orlov: 'A2', Lebedev: 'A3' }, ANAME = { A1: 'Anna 
   const OA = (id, name, extra) => Object.assign({ id: 'https://openalex.org/' + id, display_name: name, orcid: null, works_count: 4, summary_stats: { h_index: 3 }, last_known_institutions: [{ display_name: 'Вымышленный университет', country_code: 'RU' }] }, extra || {});
   // 0.9, правка 3: поля ввода — на главной; на подстранице результата они скрыты. Перед вводом — «← Новый поиск», как сделал бы человек
   const HOME_SEL = /^#(author|org|ago|anew|list|go|jq|jy|jgo|file|dfile|afile|stop)\b/;
-  const toHome = async sel => { if (typeof sel === 'string' && HOME_SEL.test(sel) && await pg.evaluate(() => document.body.dataset.view !== 'home').catch(() => false)) { await pg.click('#rback'); await pg.waitForFunction(() => document.body.dataset.view === 'home', null, { timeout: 5000 }); } };
+  // и на начальном экране «Что проверяем» (0.9) сначала выбрать нужный раздел — кнопкой, как человек
+  const toHome = async sel => { if (typeof sel !== 'string' || !HOME_SEL.test(sel)) return;
+    if (await pg.evaluate(() => document.body.dataset.view !== 'home').catch(() => false)) { await pg.click('#rback'); await pg.waitForFunction(() => document.body.dataset.view === 'home', null, { timeout: 5000 }); }
+    const pane = await pg.evaluate(s => { const el = document.querySelector(s); const c = el && el.closest('#inp .col'); return c && !c.classList.contains('on') ? c.id : ''; }, sel.split(/[ :]/)[0]).catch(() => '');
+    if (pane) await pg.click('#seg button[data-p="' + pane + '"]'); };
   // так же к таблицам и кнопкам результата — открыть нужную подстраницу (вкладку), как сделал бы человек
   const VIEW_SEL = [[/^#(outList|retry|xlsx|csv|copy)\b/, 'list'], [/^#(outAuthor|hx|acopy|axlsx|acsv)/, 'author'], [/^#(outJournal|jcopy|jxlsx|jcsv)\b/, 'journals']];
   const toView = async sel => { const m = typeof sel === 'string' && VIEW_SEL.find(([re]) => re.test(sel)); if (!m) return toHome(sel); if (await pg.evaluate(v => document.body.dataset.view !== v && viewHas(v), m[1]).catch(() => false)) { await pg.evaluate(v => setView(v), m[1]); } };
@@ -79,6 +83,19 @@ const AID = { Sokolova: 'A1', Orlov: 'A2', Lebedev: 'A3' }, ANAME = { A1: 'Anna 
   // 0.7.11: кеш ответов и прошлая проверка в браузере мешали бы подставным ответам между сценариями — в основном прогоне выключены
   await pg.addInitScript(() => { try { if (!sessionStorage.getItem('pc_keep')) { localStorage.setItem('pc_useCache', 'false'); localStorage.removeItem('pc_state'); } } catch (e) { } });
   await pg.goto(URL0);
+  // 0.9: начальный экран «Что проверяем» — при открытии ни один раздел не выбран; кнопка открывает только свой раздел;
+  // введённое при переключении сохраняется, точка — у раздела с введённым; Alt+3 — «Публикации» (ожидания записаны до прогона)
+  { await pg.waitForFunction(() => typeof REF !== 'undefined' && REF, null, { timeout: 60000 });
+    const st0 = await pg.evaluate(() => ({ btn: document.querySelectorAll('#seg button').length, open: [...document.querySelectorAll('#inp .col')].filter(c => c.offsetParent).length }));
+    T('0.9 начальный экран: три кнопки, ни один раздел не открыт', st0.btn === 3 && st0.open === 0, st0);
+    await pg.click('#seg button[data-p="secJ"]'); await pg.keyboard.type('Nature');
+    const st1 = await pg.evaluate(() => ({ vis: [...document.querySelectorAll('#inp .col')].filter(c => c.offsetParent).map(c => c.id).join(), focus: document.activeElement.id }));
+    await pg.click('#seg button[data-p="secA"]');
+    const st2 = await pg.evaluate(() => ({ vis: [...document.querySelectorAll('#inp .col')].filter(c => c.offsetParent).map(c => c.id).join(), jq: document.getElementById('jq').value, dotJ: document.querySelector('#seg button[data-p="secJ"] .dot').classList.contains('on') }));
+    await pg.keyboard.press('Alt+3'); const st3 = await pg.evaluate(() => [...document.querySelectorAll('#inp .col')].filter(c => c.offsetParent).map(c => c.id).join());
+    T('0.9 начальный экран: «Журнал» — открыт только он, курсор в поле; «Автор» — журнал скрыт, введённое сохранилось, у «Журнала» точка; Alt+3 — «Публикации»', st1.vis === 'secJ' && st1.focus === 'jq' && st2.vis === 'secA' && st2.jq === 'Nature' && st2.dotJ && st3 === 'secL', [st1, st2, st3]);
+    await pg.evaluate(() => { document.getElementById('jq').value = ''; }); await pg.reload(); await pg.waitForFunction(() => typeof REF !== 'undefined' && REF, null, { timeout: 60000 });
+    { const n = await pg.evaluate(() => [...document.querySelectorAll('#inp .col')].filter(c => c.offsetParent).length); T('0.9 начальный экран: после нового открытия — снова ни один раздел не выбран', n === 0, n); } }
   // 1. только снимок списка
   const t0 = Date.now(); await pg.setInputFiles('#file', shot);
   await pg.waitForFunction(() => /распознан|не распознан/.test(document.getElementById('ocrmsg').textContent) && !BUSY, null, { timeout: 180000 });
