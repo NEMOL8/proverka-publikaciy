@@ -1,7 +1,14 @@
 /* ===== Проверка публикаций: правила (без сети, без ИИ) ===== */
-const VERSION = '0.8.1', VERSION_DATE = '21.10.2026';
+const VERSION = '0.9', VERSION_DATE = '26.10.2026';
 /* Что нового — показывается на странице */
 const CHANGES = [
+  ['0.9', '26.10.2026', ['Новый порядок разделов: 01 Автор · 02 Журнал · 03 Публикации — тремя колонками на главной.',
+    'Результат открывается на отдельной подстранице: «← Новый поиск» (введённое в поля сохраняется), вкладки «Автор · Журналы · Публикации», кнопки «Скопировать · Excel · CSV · Печать». Кнопки «Назад» и «Вперёд» браузера работают.',
+    'Подсказки при вводе журнала: под полем — подходящие журналы из справочников, по началу названия или любого слова, с ISSN и пометками SCImago, Белого списка и Scopus; выбор мышью или стрелками и Enter.',
+    'Кнопки-наборы фильтра «Q1–Q2 или БС 1» и «Q1 или БС 1» — в таблице публикаций из списка и у автора.',
+    'CiteScore Scopus 2025 (справочник Elsevier, 32 089 изданий): значение, квартиль по лучшей тематике, процентиль, место, SNIP — у издания в списке, у публикаций автора и в разделе «Журнал». Это отдельный показатель «сейчас», квартиль SCImago он не заменяет; в фильтр не входит. У изданий без квартиля SCImago (около 1800, в основном книжные серии и труды) теперь есть квартиль Scopus.',
+    'Квартиль SCImago подписан годом: «Q1 в 2021» и «Q1 сейчас (2025)»; по годам — плашками «2021 Q1».',
+    'Новое оформление «Тихий реестр»: шрифт IBM Plex, крупные числа, меньше рамок; журнал — строкой-ведомостью; автор — имя слева, индекс Хирша крупно справа, полоса итогов.']],
   ['0.8.1', '21.10.2026', ['Встроен список источников Scopus за сентябрь 2026 (49 104 издания): у издания — индексируется ли оно в Scopus и в какие годы, исключено ли (последний номер и причина), принято ли и ещё не загружено; «в Scopus есть, квартиля SCImago нет»; ссылка на страницу издания в Scopus. То же — в разделе «Журнал».']],
   ['0.8', '21.10.2026', ['Новый раздел «Журнал»: название или ISSN (по одному в строке) — квартиль SCImago, импакт-фактор, уровень Белого списка и индексация, сейчас, на указанный год и по годам. Название можно с опечатками и сокращениями.',
     'Документ PDF или Word: утилита сама находит в нём список или таблицу публикаций, показывает найденные записи (можно убрать лишние и поправить) и проверяет их. Сканы внутри PDF распознаются. Документ никуда не отправляется.',
@@ -76,6 +83,7 @@ function loadRef(data) {
   data.sj.forEach((r, i) => { r[1].split(' ').forEach(x => put(R.sjIssn, x, i)); put(R.sjTitle, norm(r[0]), i); });
   data.wl.forEach((r, i) => { r[1].split(' ').forEach(x => put(R.wlIssn, x, i)); r[0].split(' | ').forEach(t => put(R.wlTitle, norm(t), i)); });
   if (data.sc && typeof loadSc === 'function') loadSc(R, data.sc);  // справочник Scopus (0.8), если собран
+  if (data.cs && typeof loadCs === 'function') loadCs(R, data.cs);  // CiteScore Scopus (0.9), если собран
   REF = R; return R;
 }
 const SJ_TYPE = ['журнал', 'книжная серия', 'труды конференций', 'отраслевой журнал'];
@@ -110,6 +118,8 @@ function findJournal(issns, title) {
   [out.sj, out.sjHow] = by(REF.sjIssn, REF.sjTitle, sjRec);
   [out.wl, out.wlHow] = by(REF.wlIssn, REF.wlTitle, wlRec);
   if (typeof findSc === 'function') [out.sc, out.scHow] = findSc(issns, title);  // Scopus Source List (0.8)
+  // CiteScore (0.9): по Scopus Source ID найденного издания, иначе по ISSN статьи; по одному названию — нет
+  if (typeof findCs === 'function') out.cs = findCs([out.sj && out.sjHow !== 'ambiguous' ? out.sj.sid : null, out.sc && out.scHow !== 'ambiguous' ? out.sc.id : null], issns);
   return out;
 }
 
@@ -530,7 +540,10 @@ function journalVerdict(j, year, live, oaCpd) {
     const b = live.found ? JSON.stringify([live.levels[2023] || 0, live.levels[2025] || 0, live.levels[2026] || 0, live.state === 2]) : 'нет';
     if (a !== b) { o.wlDiff = true; o.notes.push(`сайт Белого списка отвечает иначе, чем справочник от ${REF.wlDate}: на сайте — ` + (live.found ? lvStr(live.levels) + (live.state === 2 ? `, исключён ${live.disc || ''}` : '') : 'издания нет') + '; проверьте'); }
   }
-  if (j.sc) { o.sc = j.sc; const a = scAt(j.sc, year); o.scIn = a.inCov; o.notes.push(...a.notes); if (!sj) o.notes.push('в Scopus есть, квартиля SCImago нет'); }
+  const csQ = j.cs && j.cs.q ? ' — есть квартиль по CiteScore ' + j.cs.year + ' (Q' + j.cs.q + ', сейчас)' : '';
+  if (j.sc) { o.sc = j.sc; const a = scAt(j.sc, year); o.scIn = a.inCov; o.notes.push(...a.notes); if (!sj) o.notes.push('в Scopus есть, квартиля SCImago нет' + csQ); }
+  else if (j.cs && !sj) o.notes.push('в Scopus есть, квартиля SCImago нет' + csQ);
+  if (j.cs) o.cs = j.cs;  // CiteScore (0.9) — отдельный показатель, только «сейчас»: на квартиль SCImago, фильтр и сортировку не влияет
   if (oaCpd != null) o.oaCpd = oaCpd;
   return o;
 }

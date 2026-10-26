@@ -155,9 +155,16 @@ function subRu(name) { const n = String(name || '').trim(); return SUBFIELD_RU[n
 if (typeof module !== 'undefined') module.exports = { SUBFIELD_RU, subRu };
 
 /* ===== Проверка публикаций: правила (без сети, без ИИ) ===== */
-const VERSION = '0.8.1', VERSION_DATE = '21.10.2026';
+const VERSION = '0.9', VERSION_DATE = '26.10.2026';
 /* Что нового — показывается на странице */
 const CHANGES = [
+  ['0.9', '26.10.2026', ['Новый порядок разделов: 01 Автор · 02 Журнал · 03 Публикации — тремя колонками на главной.',
+    'Результат открывается на отдельной подстранице: «← Новый поиск» (введённое в поля сохраняется), вкладки «Автор · Журналы · Публикации», кнопки «Скопировать · Excel · CSV · Печать». Кнопки «Назад» и «Вперёд» браузера работают.',
+    'Подсказки при вводе журнала: под полем — подходящие журналы из справочников, по началу названия или любого слова, с ISSN и пометками SCImago, Белого списка и Scopus; выбор мышью или стрелками и Enter.',
+    'Кнопки-наборы фильтра «Q1–Q2 или БС 1» и «Q1 или БС 1» — в таблице публикаций из списка и у автора.',
+    'CiteScore Scopus 2025 (справочник Elsevier, 32 089 изданий): значение, квартиль по лучшей тематике, процентиль, место, SNIP — у издания в списке, у публикаций автора и в разделе «Журнал». Это отдельный показатель «сейчас», квартиль SCImago он не заменяет; в фильтр не входит. У изданий без квартиля SCImago (около 1800, в основном книжные серии и труды) теперь есть квартиль Scopus.',
+    'Квартиль SCImago подписан годом: «Q1 в 2021» и «Q1 сейчас (2025)»; по годам — плашками «2021 Q1».',
+    'Новое оформление «Тихий реестр»: шрифт IBM Plex, крупные числа, меньше рамок; журнал — строкой-ведомостью; автор — имя слева, индекс Хирша крупно справа, полоса итогов.']],
   ['0.8.1', '21.10.2026', ['Встроен список источников Scopus за сентябрь 2026 (49 104 издания): у издания — индексируется ли оно в Scopus и в какие годы, исключено ли (последний номер и причина), принято ли и ещё не загружено; «в Scopus есть, квартиля SCImago нет»; ссылка на страницу издания в Scopus. То же — в разделе «Журнал».']],
   ['0.8', '21.10.2026', ['Новый раздел «Журнал»: название или ISSN (по одному в строке) — квартиль SCImago, импакт-фактор, уровень Белого списка и индексация, сейчас, на указанный год и по годам. Название можно с опечатками и сокращениями.',
     'Документ PDF или Word: утилита сама находит в нём список или таблицу публикаций, показывает найденные записи (можно убрать лишние и поправить) и проверяет их. Сканы внутри PDF распознаются. Документ никуда не отправляется.',
@@ -232,6 +239,7 @@ function loadRef(data) {
   data.sj.forEach((r, i) => { r[1].split(' ').forEach(x => put(R.sjIssn, x, i)); put(R.sjTitle, norm(r[0]), i); });
   data.wl.forEach((r, i) => { r[1].split(' ').forEach(x => put(R.wlIssn, x, i)); r[0].split(' | ').forEach(t => put(R.wlTitle, norm(t), i)); });
   if (data.sc && typeof loadSc === 'function') loadSc(R, data.sc);  // справочник Scopus (0.8), если собран
+  if (data.cs && typeof loadCs === 'function') loadCs(R, data.cs);  // CiteScore Scopus (0.9), если собран
   REF = R; return R;
 }
 const SJ_TYPE = ['журнал', 'книжная серия', 'труды конференций', 'отраслевой журнал'];
@@ -266,6 +274,8 @@ function findJournal(issns, title) {
   [out.sj, out.sjHow] = by(REF.sjIssn, REF.sjTitle, sjRec);
   [out.wl, out.wlHow] = by(REF.wlIssn, REF.wlTitle, wlRec);
   if (typeof findSc === 'function') [out.sc, out.scHow] = findSc(issns, title);  // Scopus Source List (0.8)
+  // CiteScore (0.9): по Scopus Source ID найденного издания, иначе по ISSN статьи; по одному названию — нет
+  if (typeof findCs === 'function') out.cs = findCs([out.sj && out.sjHow !== 'ambiguous' ? out.sj.sid : null, out.sc && out.scHow !== 'ambiguous' ? out.sc.id : null], issns);
   return out;
 }
 
@@ -686,7 +696,10 @@ function journalVerdict(j, year, live, oaCpd) {
     const b = live.found ? JSON.stringify([live.levels[2023] || 0, live.levels[2025] || 0, live.levels[2026] || 0, live.state === 2]) : 'нет';
     if (a !== b) { o.wlDiff = true; o.notes.push(`сайт Белого списка отвечает иначе, чем справочник от ${REF.wlDate}: на сайте — ` + (live.found ? lvStr(live.levels) + (live.state === 2 ? `, исключён ${live.disc || ''}` : '') : 'издания нет') + '; проверьте'); }
   }
-  if (j.sc) { o.sc = j.sc; const a = scAt(j.sc, year); o.scIn = a.inCov; o.notes.push(...a.notes); if (!sj) o.notes.push('в Scopus есть, квартиля SCImago нет'); }
+  const csQ = j.cs && j.cs.q ? ' — есть квартиль по CiteScore ' + j.cs.year + ' (Q' + j.cs.q + ', сейчас)' : '';
+  if (j.sc) { o.sc = j.sc; const a = scAt(j.sc, year); o.scIn = a.inCov; o.notes.push(...a.notes); if (!sj) o.notes.push('в Scopus есть, квартиля SCImago нет' + csQ); }
+  else if (j.cs && !sj) o.notes.push('в Scopus есть, квартиля SCImago нет' + csQ);
+  if (j.cs) o.cs = j.cs;  // CiteScore (0.9) — отдельный показатель, только «сейчас»: на квартиль SCImago, фильтр и сортировку не влияет
   if (oaCpd != null) o.oaCpd = oaCpd;
   return o;
 }
@@ -871,6 +884,32 @@ function findSc(issns, title) {
   return [scRec(a[0]), a.length === 1 ? 'title' : 'ambiguous'];
 }
 
+/* ---------- 1а. CiteScore Scopus (0.9, правка 6) ----------
+   data.cs = { year, subj: [тематика], rows: [[Scopus Source ID, 'ISSN EISSN', название (если нет в SCImago и списке Scopus), CiteScore, SNIP, тип, [[тематика, процентиль, квартиль, место, из скольких], …]]] }
+   Тематики — наилучшая первой. Собирается mkdata_citescore.py из файла Elsevier. Это отдельный показатель: квартиль SCImago не заменяет.
+   Elsevier разрешил показ в бесплатной открытой утилите при указании источника и ссылке — подпись CS_SRC и ссылка на Scopus у каждого значения. */
+function loadCs(R, cs) {
+  R.cs = cs.rows; R.csYear = cs.year; R.csSubj = cs.subj || []; R.csId = new Map(); R.csIssn = new Map();
+  cs.rows.forEach((r, i) => { if (r[0]) R.csId.set(r[0], i); String(r[1] || '').split(' ').filter(Boolean).forEach(x => { const a = R.csIssn.get(x); if (a) a.push(i); else R.csIssn.set(x, [i]); }); });
+}
+const csHas = () => !!(REF && REF.cs);
+const CS_TYPE = { j: 'журнал', k: 'книжная серия', p: 'труды конференций', d: 'отраслевой журнал' };
+function csRec(i) {
+  const r = REF.cs[i], subs = (r[6] || []).map(s => ({ name: REF.csSubj[s[0]] || '', pct: s[1], q: s[2], rank: s[3], of: s[4] }));
+  return { sid: r[0], issns: String(r[1] || '').split(' ').filter(Boolean), title: r[2] || '', v: r[3], snip: r[4], type: r[5] || '', subs, best: subs[0] || null, q: subs[0] ? subs[0].q : null, year: REF.csYear };
+}
+/* Издание в справочнике CiteScore: по Scopus Source ID (он же Sourceid SCImago), иначе по ISSN — только если ISSN указывает на одно издание */
+function findCs(sids, issns) {
+  if (!csHas()) return null;
+  for (const s of (sids || [])) { const i = s != null ? REF.csId.get(+s) : undefined; if (i != null) return csRec(i); }
+  const hit = new Set(); (issns || []).map(normIssn).forEach(x => (REF.csIssn.get(x) || []).forEach(i => hit.add(i)));
+  return hit.size === 1 ? csRec([...hit][0]) : null;
+}
+const csSrc = cs => `Scopus CiteScore ${cs ? cs.year : (REF && REF.csYear) || ''}, © Elsevier B.V.`;
+const csLink = cs => cs && cs.sid ? 'https://www.scopus.com/sourceid/' + cs.sid : '';
+/* Короткая запись для таблиц и выгрузки: «10,7 Q1» */
+const csShort = cs => !cs ? '' : (cs.v != null ? fmtNum(cs.v) + ' ' : '') + (cs.q ? 'Q' + cs.q : 'без квартиля');
+
 /* ---------- 2. Режим «Журнал» (правка 5): название или ISSN → издание по справочникам SCImago, Белого списка и Scopus ---------- */
 const ISSN_Q = /\b(\d{4})\s*[-–]?\s*(\d{3}[\dXxХх])\b/g;
 const ABBR = { j: 'journal', zh: 'zhurnal', 'вузов': 'высших учебных заведений', 'вуз': 'высших учебных заведений', 'ран': 'российской академии наук', 'мгу': 'московского университета', 'спбгу': 'санкт петербургского университета' };  // остальные сокращения («Phys.», «Rev.», «Compd.») узнаются как начало слова
@@ -892,22 +931,24 @@ function jIndex() {
   if (REF._ji) return REF._ji; const list = [], pre = new Map();
   const addT = (k, i, t) => { const toks = jqTokens(t).map(x => isCyr(x) ? translit(x) : x), id = list.length; list.push({ k, i, nn: norm(t), toks }); new Set(toks.map(x => x.slice(0, 3))).forEach(p => { let a = pre.get(p); if (!a) pre.set(p, a = []); a.push(id); }); };
   REF.sj.forEach((r, i) => addT('sj', i, r[0])); REF.wl.forEach((r, i) => r[0].split(' | ').forEach(t => addT('wl', i, t))); if (scHas()) REF.sc.forEach((r, i) => addT('sc', i, r[0]));
+  if (csHas()) REF.cs.forEach((r, i) => { if (r[2]) addT('cs', i, r[2]); });  // у CiteScore название хранится, только если его нет в других справочниках
   return (REF._ji = { list, pre });
 }
 function tokSim(A, B) { if (!A.length || !B.length) return 0; const used = new Set(), seq = []; let m = 0; A.forEach(a => { let k = B.findIndex((b, i) => !used.has(i) && a === b); if (k < 0) k = B.findIndex((b, i) => !used.has(i) && jqTokEq(a, b)); if (k >= 0) { used.add(k); seq.push(k); m += jqTokEq(a, B[k]); } }); const ordered = seq.every((k, i) => !i || k > seq[i - 1]); return 2 * m / (A.length + B.length) * (ordered ? 1 : 0.92); }
 /* Издание по всем трём справочникам: собрать записи, связанные общими ISSN */
 function journalEntity(issns, seed) {
-  const e = { sj: null, wl: null, sc: null, issns: new Set(), notes: [] };
+  const e = { sj: null, wl: null, sc: null, cs: null, issns: new Set(), notes: [] };
   (issns || []).map(normIssn).filter(Boolean).forEach(x => e.issns.add(x));
   if (seed) e[seed.k] = seed.rec;
   for (let pass = 0; pass < 2; pass++) {
-    [e.sj, e.wl, e.sc].filter(Boolean).forEach(r => r.issns.forEach(x => e.issns.add(normIssn(x))));
+    [e.sj, e.wl, e.sc, e.cs].filter(Boolean).forEach(r => r.issns.forEach(x => e.issns.add(normIssn(x))));
     const is = [...e.issns];
     if (!e.sj) { const h = new Set(); is.forEach(x => (REF.sjIssn.get(x) || []).forEach(i => h.add(i))); if (h.size) { e.sj = sjRec([...h][0]); if (h.size > 1) e.notes.push('в SCImago несколько изданий с этим ISSN — взято первое, проверьте'); } }
     if (!e.wl) { const h = new Set(); is.forEach(x => (REF.wlIssn.get(x) || []).forEach(i => h.add(i))); if (h.size) { e.wl = wlRec([...h][0]); if (h.size > 1) e.notes.push('в Белом списке несколько изданий с этим ISSN — взято первое, проверьте'); } }
     if (!e.sc && scHas()) { const h = new Set(); is.forEach(x => (REF.scIssn.get(x) || []).forEach(i => h.add(i))); if (h.size) e.sc = scRec([...h][0]); }
+    if (!e.cs) e.cs = findCs([e.sj && e.sj.sid, e.sc && e.sc.id], is);
   }
-  e.issns = [...e.issns]; e.title = (e.sj && e.sj.title) || (e.wl && e.wl.title.split(' | ')[0]) || (e.sc && e.sc.title) || '';
+  e.issns = [...e.issns]; e.title = (e.sj && e.sj.title) || (e.wl && e.wl.title.split(' | ')[0]) || (e.sc && e.sc.title) || (e.cs && e.cs.title) || '';
   e.key = e.issns.slice().sort().join(' ') || norm(e.title);
   return e;
 }
@@ -918,14 +959,14 @@ function findJournalQuery(q) {
   const title = q.replace(ISSN_Q, ' ').replace(/\b(issn|eissn|e-issn|p-issn)\b\s*:?/gi, ' ').replace(/\s+/g, ' ').trim();
   const seen = new Map(), add = (e, score, how) => { const o = seen.get(e.key); if (!o || o.score < score) seen.set(e.key, { e, score, how }); };
   if (out.issns.length) {
-    const e = journalEntity(out.issns); if (e.sj || e.wl || e.sc) add(e, 1, 'issn');
-    if (title.length >= 3 && (e.sj || e.wl || e.sc)) { const s = Math.max(e.sj ? titleSim(title, e.sj.title) : 0, e.wl ? Math.max(...e.wl.title.split(' | ').map(t => titleSim(title, t))) : 0, e.sc ? titleSim(title, e.sc.title) : 0); if (s < 0.6) out.notes.push(`по ISSN найдено «${e.title}», а название в запросе другое — проверьте`); }
+    const e = journalEntity(out.issns); if (e.sj || e.wl || e.sc || e.cs) add(e, 1, 'issn');
+    if (title.length >= 3 && (e.sj || e.wl || e.sc || e.cs)) { const s = Math.max(e.sj ? titleSim(title, e.sj.title) : 0, e.wl ? Math.max(...e.wl.title.split(' | ').map(t => titleSim(title, t))) : 0, e.sc ? titleSim(title, e.sc.title) : 0); if (s < 0.6) out.notes.push(`по ISSN найдено «${e.title}», а название в запросе другое — проверьте`); }
   }
   if (!seen.size && title.length >= 2) {
     const J = jIndex(), qt = jqTokens(title).map(x => isCyr(x) ? translit(x) : x), nt = norm(title), cnt = new Map();
     new Set(qt.map(x => x.slice(0, 3))).forEach(pf => (J.pre.get(pf) || []).forEach(id => cnt.set(id, (cnt.get(id) || 0) + 1)));
     const need = Math.max(1, Math.ceil(new Set(qt.map(x => x.slice(0, 3))).size * 0.5));
-    cnt.forEach((c, id) => { if (c < need) return; const x = J.list[id]; const sc = x.nn === nt ? 1 : Math.min(0.99, tokSim(qt, x.toks)); if (sc < 0.6) return; const rec = { sj: sjRec, wl: wlRec, sc: scRec }[x.k](x.i); add(journalEntity(rec.issns, { k: x.k, rec }), sc, sc === 1 ? 'title' : 'similar'); });
+    cnt.forEach((c, id) => { if (c < need) return; const x = J.list[id]; const sc = x.nn === nt ? 1 : Math.min(0.99, tokSim(qt, x.toks)); if (sc < 0.6) return; const rec = { sj: sjRec, wl: wlRec, sc: scRec, cs: csRec }[x.k](x.i); add(journalEntity(rec.issns, { k: x.k, rec }), sc, sc === 1 ? 'title' : 'similar'); });
   }
   out.hits = [...seen.values()].sort((a, b) => b.score - a.score || ((b.e.sj ? 1 : 0) - (a.e.sj ? 1 : 0))).slice(0, 8);
   const top = out.hits[0];
@@ -941,7 +982,8 @@ function journalFacts(e, year) {
   if (e.sj) { const jv = journalVerdict({ sj: e.sj, wl: null, sjHow: 'issn', wlHow: null }, year || null, null, null); Object.assign(f, { q: jv.qY, qYear: jv.sjYear, qExact: year ? jv.sjExact : true, qNow: jv.qL, qNowYear: jv.yL, cpd: jv.cpd, cpdNow: jv.cpdLast, hist: Object.keys(e.sj.hist).map(y => [+y, e.sj.hist[y].q, e.sj.hist[y].cpd]), cats: e.sj.cats, sid: e.sj.sid, type: e.sj.type }); if (year && !jv.sjExact) f.notes.push(jv.notes.find(n => /взят/.test(n)) || ''); }
   if (e.wl) { const a = wlAt(e.wl, year || null); Object.assign(f, { wlLv: a.excluded ? 'excl' : a.lv, wlYear: a.y, wlNow: a.curExcl ? 'excl' : a.cur, wlDisc: e.wl.disc, idx: { wos: e.wl.wos, scopus: e.wl.scopus, rsci: e.wl.rsci } }); if (e.wl.state === 1 && e.wl.notice) f.notes.push('примечание Белого списка: ' + e.wl.notice); }
   if (e.sc) { f.sc = scStatusText(e.sc); f.scId = e.sc.id; if (year) f.notes.push(...scAt(e.sc, year).notes); }
-  if (!e.sj && e.sc) f.notes.push('в Scopus есть, квартиля SCImago нет');
+  if (e.cs) f.cs = e.cs;
+  if (!e.sj && (e.sc || e.cs)) f.notes.push('в Scopus есть, квартиля SCImago нет' + (e.cs && e.cs.q ? ' — есть квартиль по CiteScore ' + e.cs.year : ''));
   f.notes = f.notes.filter(Boolean);
   return f;
 }
@@ -1153,7 +1195,7 @@ function findDocRecords(pages) {
 /* Квартиль, указанный в самом документе или списке («Q1», «Квартиль: Q2») */
 function declQuartile(t) { const m = String(t || '').match(/(?:^|[\s(.,;|])(?:квартиль\s*:?\s*)?Q\s?([1-4])(?!\w|\.\d)/i); return m ? +m[1] : null; }
 
-if (typeof module !== 'undefined') module.exports = { loadSc, parseCoverage, scAt, findSc, findJournalQuery, journalFacts, titleSim, idFromOrcidItem, collectAuthorIds, parseHirschPage, hirschSummary, findDocRecords, declQuartile };
+if (typeof module !== 'undefined') module.exports = { loadCs, findCs, csRec, csShort, loadSc, parseCoverage, scAt, findSc, findJournalQuery, journalFacts, titleSim, idFromOrcidItem, collectAuthorIds, parseHirschPage, hirschSummary, findDocRecords, declQuartile };
 
 /* ===== Запросы в открытые базы (Crossref, OpenAlex) ===== */
 const NET = { orcid: 'https://pub.orcid.org', orcidToken: '', useORCID: true, crossref: 'https://api.crossref.org', openalex: 'https://api.openalex.org', wl: 'https://journalrank.rcsi.science/api', oaKey: '', useOA: true, useWL: true, wlCache: new Map(), srcCache: new Map(), log: [], fetch: null, pause: 120, timeout: 20000 };
@@ -1722,7 +1764,11 @@ async function init() {
   $('author').addEventListener('keydown', e => { if (e.key === 'Enter') runAuthor(); });
   // организация помогает выбрать автора: если кандидаты уже показаны — пересортировать их
   $('org').addEventListener('change', () => { if (AU.cands && !(AU.prof && !AU.prof.err)) { rankCands(AU); renderAuthor(); } saveState(true); });
-  window.addEventListener('scroll', navScroll, { passive: true });
+  // 0.9, правка 3: подстраницы результата (#author, #journals, #list) — кнопки «Назад» и «Вперёд» браузера работают
+  window.addEventListener('hashchange', () => { applyView(viewFromHash()); window.scrollTo(0, 0); });
+  // строка состояния поиска видна и на подстранице результата
+  [['status', 'statusR'], ['astatus', 'astatusR'], ['jstatus', 'jstatusR']].forEach(([a, b]) => { const m = () => { $(b).innerHTML = $(a).innerHTML; }; new MutationObserver(m).observe($(a), { childList: true, characterData: true, subtree: true }); });
+  initJsug();
   try { $('oaKey').value = localStorage.getItem('pc_oaKey') || ''; $('orcidToken').value = localStorage.getItem('pc_orcidToken') || ''; } catch (e) { }
   if (OA_BUILTIN) { $('oaKey').placeholder = 'встроенный ключ уже подключён — поле можно не заполнять'; }
   if (ORCID_BUILTIN) { $('orcidToken').placeholder = 'встроенный токен уже подключён — поле можно не заполнять'; $('orcidNote').textContent = 'В эту сборку встроен токен ORCID. Своё значение в поле заменит его только в этом браузере.'; }
@@ -1730,9 +1776,10 @@ async function init() {
   try { localStorage.removeItem('pc_org'); } catch (e) { }
   if (!ocrAvailable()) { $('drop').innerHTML = 'Распознавание снимков в эту сборку не включено — вставьте список текстом.'; $('afile').style.display = 'none'; }
   try { const uc = LS.get('pc_useCache'); if (uc === false) $('useCache').checked = false; } catch (e) { }
-  updateNav(); navScroll();
+  updateNav();
   await loadData();
-  if (REF) offerRestore();
+  if (REF) { offerRestore(); setTimeout(() => { try { jIndex(); } catch (e) { } }, 300); }  // указатель названий для подсказок — заранее
+  applyView(viewFromHash());
   cacheInfo();
 }
 async function cacheInfo() { CACHE.on = $('useCache').checked && typeof indexedDB !== 'undefined'; const n = CACHE.on ? await cacheCount() : 0; $('cacheInfo').textContent = CACHE.on ? (n ? `в кеше ответов: ${n}` : 'кеш пуст') : 'кеш не используется'; }
@@ -1757,8 +1804,9 @@ async function loadData() {
     loadRef(data);
   } catch (e) { $('refinfo').innerHTML = chip('unk', 'справочники не загружены') + ' ' + esc(e.message || e) + '. Поиск статей не работает, «Проверить связь» работает. <button class="sec small" onclick="loadData()">Повторить</button>'; return; }
   btns.forEach(b => $(b).disabled = false);
-  $('refinfo').textContent = `Справочники: SCImago за ${REF.sjYears[0]}–${REF.sjYear} годы (${REF.sj.length} изданий), Белый список на ${REF.wlDate} (${REF.wl.length} изданий)${scHas() ? `, список источников Scopus ${REF.scDate} (${REF.sc.length} изданий)` : ''}.`;
-  if (scHas()) $('jsc').textContent = ', список источников Scopus';
+  $('refinfo').textContent = `Справочники: SCImago за ${REF.sjYears[0]}–${REF.sjYear} годы (${REF.sj.length} изданий), Белый список на ${REF.wlDate} (${REF.wl.length} изданий)${scHas() ? `, список источников Scopus ${REF.scDate} (${REF.sc.length} изданий)` : ''}${csHas() ? `, CiteScore Scopus ${REF.csYear} (${REF.cs.length} изданий)` : ''}.`;
+  if (scHas()) $('jsc').textContent = ', список источников Scopus' + (csHas() ? ', CiteScore' : '');
+  renderSources();
 }
 const W = { entries: null, works: [], pubs: [], netDown: '', auto: null, dups: [] };
 const newS = () => ({ prof: null, cands: null, orcCands: null, similar: null, msgs: [], parsed: null, orcIds: null, hx: [] });
@@ -1854,30 +1902,34 @@ function notesHtml(notes) {
   return shorts.join('<br>') + (longs.length ? `<details class="mini"><summary>подробнее</summary><span class="dim">${longs.map(esc).join('<br>')}</span></details>` : '');
 }
 
-/* ----- Правка 1: переход к результату и строка быстрых переходов ----- */
-/* После действия страница сама показывает свой результат: искать его прокруткой не нужно */
+/* ----- 0.9, правки 1 и 3: подстраницы результата и вкладки ----- */
+/* Результат открывается на своей подстранице (#author, #journals, #list); «← Новый поиск» — к вводу, введённое сохраняется */
+const VIEWS = ['author', 'journals', 'list'];
+const VIEW_OF = { outList: 'list', vList: 'list', outAuthor: 'author', vAuthor: 'author', auWorks: 'author', hxPanel: 'author', outJournal: 'journals', vJournal: 'journals' };
+const viewFromHash = () => { const h = String(location.hash || '').replace(/^#/, ''); return VIEWS.indexOf(h) >= 0 ? h : 'home'; };
+const viewHas = v => v === 'list' ? !!W.entries : (v === 'author' ? !!(AU.prof || AU.cands || AU.orcCands || (AU.msgs && AU.msgs.length) || AU.parsed) : (v === 'journals' ? JR.rows.length > 0 : true));
+function applyView(v) { if (v !== 'home' && !viewHas(v)) v = 'home'; document.body.dataset.view = v; updateNav(); }
+function setView(v) { if (v !== 'home' && !viewHas(v)) v = 'home'; if (viewFromHash() !== v) location.hash = v === 'home' ? '' : v; applyView(v); }
+/* После действия страница сама показывает свой результат; id элемента → подстраница, на ней — прокрутка к элементу */
 function goTo(id) {
+  const v = VIEW_OF[id] || 'home', was = document.body.dataset.view; setView(v);
   const el = $(id); if (!el) return;
+  if (id === 'outList' || id === 'outAuthor' || id === 'outJournal' || (v === 'home' && was !== 'home')) { window.scrollTo(0, 0); return; }
   try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { el.scrollIntoView(); }
 }
-/* Пункты строки переходов появляются, когда есть что показать; рядом — счётчики */
+/* Вкладки подстраницы — в порядке разделов: Автор · Журналы · Публикации; появляются, когда есть что показать */
 function navItems() {
-  const out = [{ id: 'inp', t: 'Ввод' }];
-  if (W.entries) out.push({ id: 'outList', t: 'Публикации из списка', n: W.pubs.length });
-  if (AU.prof || AU.cands || AU.orcCands || (AU.msgs && AU.msgs.length)) {
-    out.push({ id: 'outAuthor', t: 'Автор' });
-    if (AU.prof && !AU.prof.err) out.push({ id: 'auWorks', t: 'Публикации автора', n: AU.prof.js.length });
-  }
-  if (JR.rows.length) out.push({ id: 'outJournal', t: 'Журналы', n: JR.rows.length });
+  const out = [];
+  if (viewHas('author')) out.push({ v: 'author', t: 'Автор', n: AU.prof && !AU.prof.err ? AU.prof.js.length : null });
+  if (JR.rows.length) out.push({ v: 'journals', t: 'Журналы', n: JR.rows.length });
+  if (W.entries) out.push({ v: 'list', t: 'Публикации', n: W.pubs.length });
   return out;
 }
 function updateNav() {
-  const b = $('nav'); if (!b) return; const it = navItems();
-  if (it.length <= 1) { b.style.display = 'none'; b.innerHTML = ''; return; }
-  b.style.display = 'flex'; b.innerHTML = it.map(x => `<a href="javascript:goTo('${x.id}')">${esc(x.t)}${x.n != null ? ' <b>' + x.n + '</b>' : ''}</a>`).join('<span class="nsep">·</span>');
+  const b = $('tabs'); if (!b) return; const cur = document.body.dataset.view;
+  b.innerHTML = navItems().map(x => `<a href="#${x.v}"${x.v === cur ? ' class="on"' : ''}>${esc(x.t)}${x.n != null ? '<b>' + x.n + '</b>' : ''}</a>`).join('');
 }
-/* Кнопка «К вводу» — когда пользователь ушёл вниз */
-function navScroll() { const b = $('toinp'); if (b) b.style.display = window.scrollY > 500 ? '' : 'none'; }
+function navScroll() { }
 
 /* ----- Режим 1: список публикаций ----- */
 /* Удобство 4: прогресс «обработано 12 из 30» и «Остановить»; удобство 2: ответы из кеша браузера; патенты не ищутся */
@@ -1962,11 +2014,41 @@ function extLinks(issns) {
   return [is ? lnk('https://mjl.clarivate.com/search-results?issn=' + is, 'есть ли в WoS') : '', lnk('https://jcr.clarivate.com/', 'JCR'), lnk('https://www.scopus.com/sources.uri', 'Scopus Sources')].filter(Boolean).join(' · ') + (is ? ` (ISSN ${is})` : '');
 }
 function quartText(jv, sj, short, wl, issns) {
-  if (!sj) return chip('unk', 'нет в SCImago') + (jv && jv.sc ? `<div class="dim">в Scopus есть, квартиля SCImago нет${jv.sc.id ? ' · ' + lnk(scLink(jv.sc), 'Scopus') : ''}</div>` : '') + (short ? '' : `<div class="dim">квартиль WoS и CiteScore утилита не получает — посмотрите сами: ${extLinks(issns)}</div>`);
-  let h = `${qChip(jv.qY, !short)} <span class="dim">${jv.sjYear}${jv.sjExact ? '' : ' — за год публикации данных нет'}</span>`;
-  if (jv.yL !== jv.sjYear && jv.qL !== jv.qY) h += `<br>${chip('check', 'сейчас ' + (jv.qL ? 'Q' + jv.qL : 'без квартиля'))} <span class="dim">${jv.yL}</span>`;
-  if (!short) h += `<details class="mini"><summary>по годам</summary><span class="dim">${esc(jv.hist)}</span></details>`;
+  if (!sj) return chip('unk', 'нет в SCImago') + (jv && jv.sc ? `<div class="dim">в Scopus есть, квартиля SCImago нет${jv.sc.id ? ' · ' + lnk(scLink(jv.sc), 'Scopus') : ''}</div>` : '') + (short ? '' : `<div class="dim">квартиль WoS${jv && jv.cs ? '' : ' и CiteScore'} утилита не получает — посмотрите сами: ${extLinks(issns)}</div>`);
+  // 0.9: у каждого значения — год: «Q1 в 2021» (год публикации) и «Q1 сейчас (2025)»
+  const qq = q => q ? `<span class="q">Q${q}</span>` : chip('unk', 'без квартиля');
+  let h = `<div class="qc">${qq(jv.qY)} <span class="dim">в ${jv.sjYear}${jv.sjExact ? '' : ' — за год публикации данных нет'}</span>`;
+  if (jv.yL !== jv.sjYear) h += `<br>${jv.qL !== jv.qY ? chip('check', jv.qL ? 'Q' + jv.qL : 'без квартиля') : qq(jv.qL)} <span class="dim">сейчас (${jv.yL})</span>`;
+  else h += ` <span class="dim">(сейчас)</span>`;
+  h += '</div>';
+  if (!short) h += `<details class="mini"><summary>по годам</summary>${yearChips(sj, jv.sjYear, 0)}</details>`;
   return h + `<div class="dim">${lnk(`https://www.scimagojr.com/journalsearch.php?q=${sj.sid}&tip=sid`, 'SCImago')} · ${lnk(scopusSource(sj.sid), 'Scopus')}${short ? '' : ' · ' + extLinks(issns).split(' · ')[0]}</div>`;
+}
+/* Квартиль SCImago по годам — плашками «2021 Q1»; год публикации обведён. last — сколько последних лет (0 — все) */
+function yearChips(sj, mark, last) {
+  if (!sj || !sj.hist) return '';
+  let ys = Object.keys(sj.hist).map(Number).sort((a, b) => a - b); if (last) ys = ys.slice(-last);
+  return '<div class="yrs">' + ys.map(y => `<span class="yq${y === mark ? ' pub' : ''}" title="${esc('SCImago ' + y + (sj.hist[y].cpd != null ? ', импакт-фактор ' + fmtNum(sj.hist[y].cpd) : ''))}"><span class="y">${y}</span><b>${sj.hist[y].q ? 'Q' + sj.hist[y].q : '—'}</b></span>`).join('') + '</div>';
+}
+/* CiteScore Scopus (0.9, правка 6): число — ссылка на страницу издания в Scopus, подпись Elsevier — в подсказке.
+   Отдельный показатель за последний год («сейчас»); квартиль SCImago не заменяет. */
+const csTip = cs => csSrc(cs) + '. Квартиль — наилучший по тематикам Scopus' + (cs.best ? ` (${cs.best.name}, ${cs.best.pct}-й процентиль)` : '') + '. Нажмите — страница издания в Scopus.';
+function csCell(cs) {
+  if (!csHas()) return '';
+  if (!cs) return `<span class="dim" title="${esc('нет в справочнике ' + csSrc(null))}">—</span>`;
+  return `<a class="csv" target="_blank" rel="noopener" href="${esc(csLink(cs))}" title="${esc(csTip(cs))}">${esc(csShort(cs))}</a>` + (cs.best ? `<div class="dim">${esc(cs.best.name)} · ${cs.best.pct}-й процентиль</div>` : '');
+}
+const csSubsHtml = cs => `<table>${cs.subs.map(x => `<tr><td>${esc(x.name)}</td><td class="n">Q${x.q}</td><td class="n" title="процентиль">${x.pct}</td><td class="n" title="место в тематике">${x.rank} из ${x.of}</td></tr>`).join('')}</table>`;
+/* Строка CiteScore под основными числами журнала */
+function csLine(cs, sjQ) {
+  if (!csHas()) return '';
+  if (!cs) return `<div class="cs"><span class="cap">Scopus · CiteScore ${REF.csYear}</span> &nbsp;<span class="dim">нет в справочнике CiteScore</span></div>`;
+  const b = cs.best, more = cs.subs.length - 1;
+  return `<div class="cs"><span class="cap">Scopus · CiteScore ${cs.year}</span> &nbsp;<a class="csv" target="_blank" rel="noopener" href="${esc(csLink(cs))}" title="${esc(csTip(cs))}">${esc(csShort(cs))}</a>`
+    + (b ? ` &nbsp;${esc(b.name)} · ${b.pct}-й процентиль · ${b.rank} из ${b.of}` : '')
+    + (more > 0 ? `<details class="mini"><summary>ещё ${more} ${more === 1 ? 'тематика' : (more < 5 ? 'тематики' : 'тематик')}</summary>${csSubsHtml(cs)}</details>` : '')
+    + (cs.snip != null ? ` &nbsp;· SNIP <span class="mono">${fmtNum(Math.round(cs.snip * 1000) / 1000)}</span>` : '')
+    + (sjQ && cs.q && sjQ !== cs.q ? ` &nbsp;· <span title="квартиль SCImago и квартиль по CiteScore считаются по-разному — это не ошибка">у SCImago Q${sjQ} — другой показатель</span>` : '') + '</div>';
 }
 function wlText(wl, year, short) {
   if (!wl) return nchip('нет в списке');
@@ -2030,11 +2112,18 @@ function filterBar(id, shown, total, noCpd) {
   const pill = (grp, v, t, dis) => `<label class="pill${f[grp].indexOf(v) >= 0 ? ' on' : ''}${dis ? ' off' : ''}"${dis ? ' title="заработает, когда найден автор (раздел 2)"' : ''}><input type="checkbox" ${f[grp].indexOf(v) >= 0 ? 'checked' : ''} ${dis ? 'disabled' : ''} onchange="setFlt('${id}','${grp}','${v}',this.checked)">${t}</label>`;
   const num = (k, ph, step) => `<input type="number" class="yr"${step ? ` step="${step}" min="0"` : ''} value="${f[k] || ''}" placeholder="${ph}" onchange="setFltY('${id}','${k}',this.value)">`;
   const active = f.q.length || f.wl.length || f.yFrom || f.yTo || f.corr.length || f.ifFrom;
-  return `<div class="fbar noprint"><div class="fr"><span class="grp"><span class="gl">Квартиль</span>${['1', '2', '3', '4'].map(v => pill('q', v, 'Q' + v)).join('')}${pill('q', 'none', 'нет')}</span><span class="or">или</span><span class="grp"><span class="gl">Белый список</span>${['1', '2', '3', '4'].map(v => pill('wl', v, v)).join('')}${pill('wl', 'none', 'нет')}${pill('wl', 'excl', 'исключён')}</span>`
+  const pre = (k, t) => `<button class="preset${presetOn(f, k) ? ' on' : ''}" onclick="setPreset('${id}','${k}')" title="квартиль SCImago и уровень Белого списка — на год публикации; CiteScore не учитывается. Ещё нажатие — снять">${t}</button>`;
+  return `<div class="fbar noprint"><div class="fr"><span class="grp"><span class="gl">Наборы</span>${pre('q12', 'Q1–Q2 или БС 1')}${pre('q1', 'Q1 или БС 1')}</span></div><div class="fr"><span class="grp"><span class="gl">Квартиль</span>${['1', '2', '3', '4'].map(v => pill('q', v, 'Q' + v)).join('')}${pill('q', 'none', 'нет')}</span><span class="or">или</span><span class="grp"><span class="gl">Белый список</span>${['1', '2', '3', '4'].map(v => pill('wl', v, v)).join('')}${pill('wl', 'none', 'нет')}${pill('wl', 'excl', 'исключён')}</span>`
     + `<span class="fright"><span class="cnt">Показано <b>${shown}</b> из ${total}${f.ifFrom && noCpd ? ` · без импакт-фактора (нет в SCImago) скрыто ${noCpd}` : ''}</span>${active ? `<button class="linkbtn" onclick="resetFlt('${id}')">Сбросить</button>` : ''}<details class="fhelp"><summary title="Как работает фильтр">?</summary><div>Квартиль, уровень и импакт-фактор — на год публикации. Отмеченные квартили и уровни объединяются через «или» («Q1» + «1» — статьи, у которых Q1 или 1 уровень Белого списка); годы, импакт-фактор и corresponding — дополнительные условия «и». Импакт-фактор здесь — «цитирований на документ за 2 года» SCImago, это не импакт-фактор WoS.${corrOff ? ' Фильтр corresponding в этой таблице заработает, когда найден автор (раздел 2).' : ''}</div></details></span></div>`
     + `<div class="fr"><span class="grp"><span class="gl">Годы</span>${num('yFrom', 'с')} – ${num('yTo', 'по')}</span><span class="grp"><span class="gl">Импакт-фактор от</span>${num('ifFrom', 'любой', '0.1')}</span><span class="grp"><span class="gl">Corresponding</span>${pill('corr', 'yes', 'да', corrOff)}${pill('corr', 'no', 'нет', corrOff)}${pill('corr', 'unk', 'не указан', corrOff)}</span>`
     + `</div></div>`;
 }
+/* 0.9, правка 4: кнопки-наборы фильтра. Выставляют только квартиль и уровень Белого списка (они объединяются через «или»);
+   годы, импакт-фактор и corresponding не трогают. Кнопка подсвечена, когда фильтр совпадает с набором — в том числе выставленный вручную. */
+const PRESETS = { q12: { q: ['1', '2'], wl: ['1'] }, q1: { q: ['1'], wl: ['1'] } };
+const sameSet = (a, b) => a.length === b.length && a.every(x => b.indexOf(x) >= 0);
+const presetOn = (f, k) => sameSet(f.q, PRESETS[k].q) && sameSet(f.wl, PRESETS[k].wl);
+function setPreset(id, k) { const f = FLT[id]; if (presetOn(f, k)) { f.q = []; f.wl = []; } else { f.q = PRESETS[k].q.slice(); f.wl = PRESETS[k].wl.slice(); } reFlt(id); saveState(true); }
 function setFlt(id, grp, v, on) { const a = FLT[id][grp], i = a.indexOf(v); if (on && i < 0) a.push(v); if (!on && i >= 0) a.splice(i, 1); reFlt(id); saveState(true); }
 function setFltY(id, k, v) { FLT[id][k] = k === 'ifFrom' ? (parseFloat(String(v).replace(',', '.')) || 0) : (+v || 0); reFlt(id); saveState(true); }
 function resetFlt(id) { FLT[id] = FLT0(); reFlt(id); saveState(true); }
@@ -2063,7 +2152,8 @@ function searchLinks(e) {
 const recordHtml = e => `<details class="mini"><summary>запись из списка</summary><span class="dim">${esc(e.raw)}</span></details>`;
 
 function dupNotes(i) { return (W.dups || []).filter(d => d.a === i || d.b === i).map(d => { const o = d.a === i ? d.b : d.a; return `возможный дубль записи № ${numOf(W.pubs[o].entry, o)}: ${d.why}`; }); }
-const TH_Q = 'Квартиль SCImago<div class="sub">на год публикации</div>', TH_WL = 'Белый список<div class="sub">на год публикации</div>', TH_IF = 'Импакт-фактор<div class="sub">SCImago, цит. на документ за 2 года</div>';
+const TH_CS = () => `CiteScore<div class="sub">Scopus ${REF.csYear}, сейчас</div>`;
+const TH_Q = 'Квартиль SCImago<div class="sub">на год публикации и сейчас</div>', TH_WL = 'Белый список<div class="sub">на год публикации</div>', TH_IF = 'Импакт-фактор<div class="sub">SCImago, цит. на документ за 2 года</div>';
 const patentLink = e => e.patentNo ? lnk('https://patents.google.com/patent/' + e.patentNo, 'патент ' + e.patentNo.replace(/^RU(\d+)/, 'RU $1 ')) : '';
 const doneCnt = (keys) => keys.filter(k => MARKS[k]).length;
 function renderList() {
@@ -2071,21 +2161,22 @@ function renderList() {
   const pubs = W.pubs, rows = listRows(), dn = doneCnt(pubs.map(markKeyL)); let h = `<h2>Публикации из списка (${pubs.length})${dn ? ` <span class="sub">· проверено ${dn}</span>` : ''}</h2>`;
   if (W.dups.length) h += `<p>${chip('check', 'проверьте')} Возможных дублей в списке: <b>${W.dups.length}</b> — ${W.dups.map(d => `№ ${numOf(pubs[d.a].entry, d.a)} и № ${numOf(pubs[d.b].entry, d.b)} (${esc(d.why)})`).join('; ')}. Утилита ничего не исключает — решите сами.</p>`;
   h += filterBar('list', rows.length, pubs.length, noCpdHidden(pubs.map(listKey), listFlt()));
-  h += `<table class="t pubs"><tr><th style="width:6%">№</th>${sortTh('list', 'year', 'Публикация<div class="sub">сортировка по году</div>', 'width:23%')}<th style="width:13%">Издание</th>${sortTh('list', 'q', TH_Q, 'width:11%')}${sortTh('list', 'wl', TH_WL, 'width:11%')}${sortTh('list', 'if', TH_IF, 'width:10%')}<th style="width:14%">Авторы</th><th>Примечания</th></tr>`;
+  const cs = csHas(), nc = cs ? 9 : 8;
+  h += `<table class="t pubs"><tr><th style="width:7%">№</th>${sortTh('list', 'year', 'Публикация<div class="sub">сортировка по году</div>', 'width:20%')}<th style="width:12%">Издание</th>${sortTh('list', 'q', TH_Q, 'width:11%')}${sortTh('list', 'wl', TH_WL, 'width:10%')}${sortTh('list', 'if', TH_IF, 'width:9%')}${cs ? `<th style="width:9%">${TH_CS()}</th>` : ''}<th style="width:13%">Авторы</th><th>Примечания</th></tr>`;
   rows.forEach(({ p, i }) => {
     const w = p.work, e = p.entry, notes = p.notes.concat(dupNotes(i)), mk = markKeyL(p), tr = MARKS[mk] ? '<tr class="done">' : '<tr>';
     const nh = notesHtml(notes), num = `<td>${numOf(e, i)}${markBox(mk)}</td>`;
-    if (p.found === 'patent') { h += `${tr}${num}<td><span class="dim">${esc(e.raw.length > 220 ? e.raw.slice(0, 220) + '…' : e.raw)}</span><br>${nchip('патент')}${recordHtml(e)}</td><td colspan="5" class="dim">Патент — в Crossref и OpenAlex не ищется, квартиля и импакт-фактора у него нет.${e.patentNo ? ' Посмотреть: ' + patentLink(e) + '.' : ''}</td><td class="notes">${nh}</td></tr>`; return; }
-    if (!w) { h += `${tr}${num}<td><span class="dim">${esc(e.raw.length > 220 ? e.raw.slice(0, 220) + '…' : e.raw)}</span><br>${chip('unk', p.found === 'no' ? 'не найдена' : 'не проверена')}${altsHtml(i)}${p.found === 'no' ? searchLinks(e) : ''}</td><td colspan="5" class="dim">${p.found === 'no' ? 'Статья не найдена в открытых базах — квартиль и остальное по ней не определены. Это не значит, что её нет.' : 'Поиск по этой записи не выполнялся.'}</td><td class="notes">${nh}</td></tr>`; return; }
+    if (p.found === 'patent') { h += `${tr}${num}<td><span class="dim">${esc(e.raw.length > 220 ? e.raw.slice(0, 220) + '…' : e.raw)}</span><br>${nchip('патент')}${recordHtml(e)}</td><td colspan="${nc - 3}" class="dim">Патент — в Crossref и OpenAlex не ищется, квартиля и импакт-фактора у него нет.${e.patentNo ? ' Посмотреть: ' + patentLink(e) + '.' : ''}</td><td class="notes">${nh}</td></tr>`; return; }
+    if (!w) { h += `${tr}${num}<td><span class="dim">${esc(e.raw.length > 220 ? e.raw.slice(0, 220) + '…' : e.raw)}</span><br>${chip('unk', p.found === 'no' ? 'не найдена' : 'не проверена')}${altsHtml(i)}${p.found === 'no' ? searchLinks(e) : ''}</td><td colspan="${nc - 3}" class="dim">${p.found === 'no' ? 'Статья не найдена в открытых базах — квартиль и остальное по ней не определены. Это не значит, что её нет.' : 'Поиск по этой записи не выполнялся.'}</td><td class="notes">${nh}</td></tr>`; return; }
     const url = w.doi ? 'https://doi.org/' + w.doi : (w.oaId ? 'https://openalex.org/' + w.oaId : '');
     let c1 = (url ? lnk(url, w.title) : esc(w.title)).replace('<a ', '<a class="ttl" ') + `<div class="dim">${[w.year || 'год ?', p.typeName, w.doi ? 'DOI ' + lnk(url, w.doi) : 'DOI нет', w.source === 'OpenAlex' ? 'найдена в OpenAlex' : ''].filter(Boolean).join(' · ')}</div>`;
     // удобство 11: причина «проверьте» прямо в пометке
     if (p.found === 'check') c1 += chip('check', `похожая (совпадение ${Math.round((w.score || 0) * 100)} %) — проверьте`);
     c1 += altsHtml(i) + recordHtml(e);
     const jc = `<b>${esc(w.journal || 'издание не указано')}</b>` + (w.issns.length ? '<div class="dim">ISSN ' + w.issns.map(x => esc(fmtIssn(normIssn(x)))).join(', ') + '</div>' : '') + '<div>' + idxText(p.j.wl, p.j.sc, w.year) + '</div>';
-    h += `${tr}${num}<td>${c1}</td><td>${jc}</td><td>${quartText(p.jv, p.j.sj, false, p.j.wl, w.issns)}${p.declQ ? `<div class="dim" title="квартиль, указанный в списке или документе — для сравнения">в списке: Q${p.declQ}</div>` : ''}</td><td>${wlCell(p)}</td><td>${ifCell(p)}</td><td>${authorsCell(p)}</td><td class="notes">${nh}</td></tr>`;
+    h += `${tr}${num}<td>${c1}</td><td>${jc}</td><td>${quartText(p.jv, p.j.sj, false, p.j.wl, w.issns)}${p.declQ ? `<div class="dim" title="квартиль, указанный в списке или документе — для сравнения">в списке: Q${p.declQ}</div>` : ''}</td><td>${wlCell(p)}</td><td>${ifCell(p)}</td>${cs ? `<td>${csCell(p.j.cs)}</td>` : ''}<td>${authorsCell(p)}</td><td class="notes">${nh}</td></tr>`;
   });
-  if (!rows.length) h += `<tr><td colspan="8" class="dim">Под фильтр не подходит ни одна статья.</td></tr>`;
+  if (!rows.length) h += `<tr><td colspan="${nc}" class="dim">Под фильтр не подходит ни одна статья.</td></tr>`;
   h += '</table>';
   const probs = [NET.oaOff ? 'OpenAlex отключился: ' + esc(NET.oaOff) + ' — corresponding и организации не определены' : '', NET.wlOff ? 'сайт Белого списка не ответил (' + esc(NET.wlOff) + ') — уровни взяты из справочника от ' + REF.wlDate : ''].filter(Boolean);
   if (probs.length) h += `<p class="dim">${probs.join('. ')}.</p>`;
@@ -2320,9 +2411,9 @@ function authorBody(S, k, fid, withFilter) {
     if (dn) h += `<p class="dim">Отмечено «проверено»: ${dn} из ${all.length}.</p>`;
     if (!all.length) h += '<p class="dim">Статей нет. Это не значит, что их нет вообще: профиль в базе может быть пустым.</p>';
     else if (!rows.length) h += '<p class="dim">Под фильтр не подходит ни одна статья.</p>';
-    else h += `<table class="t"><tr>${sortTh(fid, 'year', 'Год', 'width:8%')}<th>Статья и ссылка</th><th style="width:16%">Издание</th>${sortTh(fid, 'q', 'Квартиль', 'width:12%')}${sortTh(fid, 'wl', 'Белый список', 'width:12%')}${sortTh(fid, 'if', 'Импакт-фактор<div class="sub">SCImago</div>', 'width:9%')}<th style="width:9%">Место автора</th><th style="width:12%">Corresponding</th></tr>` + rows.map(x => {
+    else h += `<table class="t pubs"><tr>${sortTh(fid, 'year', 'Год', 'width:7%')}<th>Статья и ссылка</th><th style="width:15%">Издание</th>${sortTh(fid, 'q', 'Квартиль<div class="sub">SCImago</div>', 'width:12%')}${sortTh(fid, 'wl', 'Белый список', 'width:11%')}${sortTh(fid, 'if', 'Импакт-фактор<div class="sub">SCImago</div>', 'width:8%')}${csHas() ? `<th style="width:9%">${TH_CS()}</th>` : ''}<th style="width:8%">Место автора</th><th style="width:11%">Corresponding</th></tr>` + rows.map(x => {
       const url = wLink(x.w), mk = markKeyA(x);
-      return `<tr${MARKS[mk] ? ' class="done"' : ''}><td>${x.w.year || ''}${markBox(mk)}</td><td>${esc(x.w.title)}${k < 0 && listed.has(x.w.doi) && x.w.doi ? ' ' + nchip('в списке') : ''}${x.w.type === 'review' ? ' <span class="dim">обзор</span>' : ''}<br>${url ? lnk(url) : chip('unk', 'ссылки нет')}</td><td>${esc(x.w.journal)}</td><td>${quartText(x.jv, x.j.sj, true, x.j.wl)}</td><td>${wlText(x.j.wl, x.w.year, true)}</td><td>${x.jv.cpd != null ? fmtNum(x.jv.cpd) : ''}</td><td class="dim">${esc(x.pos || '')}</td><td>${corrChip(x.corrSt, x.corrNames)}</td></tr>`;
+      return `<tr${MARKS[mk] ? ' class="done"' : ''}><td>${x.w.year || ''}${markBox(mk)}</td><td>${esc(x.w.title)}${k < 0 && listed.has(x.w.doi) && x.w.doi ? ' ' + nchip('в списке') : ''}${x.w.type === 'review' ? ' <span class="dim">обзор</span>' : ''}<br>${url ? lnk(url) : chip('unk', 'ссылки нет')}</td><td>${esc(x.w.journal)}</td><td>${quartText(x.jv, x.j.sj, true, x.j.wl)}</td><td>${wlText(x.j.wl, x.w.year, true)}</td><td class="mono">${x.jv.cpd != null ? fmtNum(x.jv.cpd) : ''}</td>${csHas() ? `<td>${csCell(x.j.cs)}</td>` : ''}<td class="dim">${esc(x.pos || '')}</td><td>${corrChip(x.corrSt, x.corrNames)}</td></tr>`;
     }).join('') + '</table>';
   } else if (S.cands || S.orcCands) {
     const c = S.cands || [], o = S.orcCands || [];
@@ -2340,7 +2431,7 @@ function authorBody(S, k, fid, withFilter) {
 function renderAuthor() {
   const S = AU;
   if (!S.prof && !S.cands && !S.orcCands && !S.msgs.length && !S.parsed) { $('outAuthor').innerHTML = ''; $('auOut').style.display = 'none'; return; }
-  $('outAuthor').innerHTML = '<h2>Автор</h2>' + authorBody(S, -1, 'au', true).replace('<p>Источник —', '<h2 id="auWorks">Все публикации автора</h2><p>Источник —');
+  $('outAuthor').innerHTML = '<h2>Автор <button class="linkbtn noprint" style="margin-left:14px;text-transform:none;letter-spacing:0" onclick="resetAuthor()">Найти другого автора</button></h2>' + authorBody(S, -1, 'au', true).replace('<p>Источник —', '<h2 id="auWorks">Все публикации автора</h2><p>Источник —');
   $('auOut').style.display = S.prof && !S.prof.err ? '' : 'none';
 }
 
@@ -2352,17 +2443,20 @@ const scS = (sc, year) => !scHas() ? '' : (!sc ? 'нет в списке ист�
 const corrS = w => !w.oa ? 'нет данных' : (!w.corr || !w.corr.known ? 'в базе не указан' : w.corr.names.join(', '));
 const orgS = me => orgNames(me).join('; ');
 const markS = k => MARKS[k] ? 'да' : '';
+/* CiteScore в выгрузке (0.9): значение, квартиль, тематика и столбец «Источник» — условие Elsevier (указание источника и ссылка) */
+const csHead = () => csHas() ? ['CiteScore (Scopus ' + REF.csYear + ', сейчас)', 'Квартиль по CiteScore (наилучший)', 'Тематика Scopus (процентиль)', 'Источник CiteScore'] : [];
+const csCols = cs => !csHas() ? [] : (!cs ? ['', '', '', ''] : [cs.v != null ? cs.v : '', cs.q ? 'Q' + cs.q : '', cs.best ? cs.best.name + ' (' + cs.best.pct + ')' : '', csSrc(cs) + ' — ' + csLink(cs)]);
 /* Таблица для копирования и выгрузки файлом: числа — числами (Excel сам покажет их по-русски) */
 function listTable() {
-  const ids = auIds().length; const L = [['№', 'Проверено', 'Найденная статья', 'Ссылка', 'Год', 'Тип', 'Издание', 'ISSN', 'Квартиль (год публикации)', 'Квартиль сейчас (' + REF.sjYear + ')', 'Индексация (Белый список)', 'Белый список (год публикации)', 'Импакт-фактор (SCImago, цит. на документ за 2 года)', 'Импакт-фактор в списке', 'Квартиль в списке', 'Scopus (список источников)', 'Corresponding (OpenAlex)'].concat(ids ? ['Найденный автор — corresponding', 'Организация автора'] : []).concat(['Первый автор', 'Последний автор', 'Примечания', 'Запись из списка'])];
+  const ids = auIds().length; const L = [['№', 'Проверено', 'Найденная статья', 'Ссылка', 'Год', 'Тип', 'Издание', 'ISSN', 'Квартиль (год публикации)', 'Квартиль сейчас (' + REF.sjYear + ')', 'Индексация (Белый список)', 'Белый список (год публикации)', 'Импакт-фактор (SCImago, цит. на документ за 2 года)', 'Импакт-фактор в списке', 'Квартиль в списке', 'Scopus (список источников)'].concat(csHead()).concat(['Corresponding (OpenAlex)']).concat(ids ? ['Найденный автор — corresponding', 'Организация автора'] : []).concat(['Первый автор', 'Последний автор', 'Примечания', 'Запись из списка'])];
   listRows().forEach(({ p, i }) => { const w = p.work, jv = p.jv || {}, a = w ? w.authors : [], m = w ? listMe(w) : null, num = numOf(p.entry, i);
-    L.push([typeof num === 'number' ? num : String(num), markS(markKeyL(p)), w ? w.title : (p.found === 'patent' ? 'патент — не ищется' : (p.found === 'no' ? 'не найдена' : 'не проверена')), w ? wLink(w) : (p.entry.patentNo ? 'https://patents.google.com/patent/' + p.entry.patentNo : ''), w ? w.year : '', w ? p.typeName : (p.found === 'patent' ? 'патент' : ''), w ? w.journal : '', w ? w.issns.join(', ') : '', w && p.j.sj ? (jv.qY ? 'Q' + jv.qY : 'нет') + ' (' + jv.sjYear + ')' : '', w && p.j.sj && jv.qL ? 'Q' + jv.qL : '', w ? idxS(p.j.wl) : '', w ? wlS(p.j.wl, w.year) : '', w && jv.cpd != null ? Math.round(jv.cpd * 100) / 100 : '', p.declIF != null ? p.declIF : '', p.declQ ? 'Q' + p.declQ : '', w ? scS(p.j.sc, w.year) : '', w ? corrS(w) : ''].concat(ids ? [m && m.me ? CORR_T[m.corr] : 'нет данных', m && m.me ? orgS(m.me) : ''] : []).concat([aName(a[0]), a.length > 1 ? aName(a[a.length - 1]) : '', p.notes.concat(dupNotes(i)).join('; '), p.entry.raw])); });
+    L.push([typeof num === 'number' ? num : String(num), markS(markKeyL(p)), w ? w.title : (p.found === 'patent' ? 'патент — не ищется' : (p.found === 'no' ? 'не найдена' : 'не проверена')), w ? wLink(w) : (p.entry.patentNo ? 'https://patents.google.com/patent/' + p.entry.patentNo : ''), w ? w.year : '', w ? p.typeName : (p.found === 'patent' ? 'патент' : ''), w ? w.journal : '', w ? w.issns.join(', ') : '', w && p.j.sj ? (jv.qY ? 'Q' + jv.qY : 'нет') + ' (' + jv.sjYear + ')' : '', w && p.j.sj && jv.qL ? 'Q' + jv.qL : '', w ? idxS(p.j.wl) : '', w ? wlS(p.j.wl, w.year) : '', w && jv.cpd != null ? Math.round(jv.cpd * 100) / 100 : '', p.declIF != null ? p.declIF : '', p.declQ ? 'Q' + p.declQ : '', w ? scS(p.j.sc, w.year) : ''].concat(csCols(w ? p.j.cs : null)).concat([w ? corrS(w) : '']).concat(ids ? [m && m.me ? CORR_T[m.corr] : 'нет данных', m && m.me ? orgS(m.me) : ''] : []).concat([aName(a[0]), a.length > 1 ? aName(a[a.length - 1]) : '', p.notes.concat(dupNotes(i)).join('; '), p.entry.raw])); });
   return L;
 }
 function copyList() { if (!W.entries) return; toClip(listTable().map(r => tsvRow(r.map(cellTxt))).join('\n'), 'status'); }
 function exportList(kind) { if (!W.entries) return; const t = listTable(), nm = 'Публикации_из_списка_' + today(); download(nm + '.' + kind, kind === 'xlsx' ? xlsxBlob('Публикации из списка', t) : csvBlob(t)); $('status').textContent = 'Файл ' + nm + '.' + kind + ' сохранён в папку загрузок.'; }
-const profHead = () => ['Год', 'Проверено', 'Статья', 'Ссылка', 'Издание', 'Квартиль (год публикации)', 'Квартиль сейчас (' + REF.sjYear + ')', 'Белый список (год публикации)', 'Импакт-фактор (SCImago)', 'Место автора', 'Corresponding', 'Организация автора в статье'];
-const profLine = x => [x.w.year, markS(markKeyA(x)), x.w.title, wLink(x.w), x.w.journal, x.j.sj ? (x.jv.qY ? 'Q' + x.jv.qY : 'нет') + ' (' + x.jv.sjYear + ')' : '', x.j.sj && x.jv.qL ? 'Q' + x.jv.qL : '', wlS(x.j.wl, x.w.year), x.jv.cpd != null ? Math.round(x.jv.cpd * 100) / 100 : '', x.pos || '', x.corrSt ? CORR_T[x.corrSt] + (x.corrSt === 'no' && x.corrNames.length ? ' (' + x.corrNames.join(', ') + ')' : '') : 'нет данных', orgS(x.me)];
+const profHead = () => ['Год', 'Проверено', 'Статья', 'Ссылка', 'Издание', 'Квартиль (год публикации)', 'Квартиль сейчас (' + REF.sjYear + ')', 'Белый список (год публикации)', 'Импакт-фактор (SCImago)'].concat(csHead()).concat(['Место автора', 'Corresponding', 'Организация автора в статье']);
+const profLine = x => [x.w.year, markS(markKeyA(x)), x.w.title, wLink(x.w), x.w.journal, x.j.sj ? (x.jv.qY ? 'Q' + x.jv.qY : 'нет') + ' (' + x.jv.sjYear + ')' : '', x.j.sj && x.jv.qL ? 'Q' + x.jv.qL : '', wlS(x.j.wl, x.w.year), x.jv.cpd != null ? Math.round(x.jv.cpd * 100) / 100 : ''].concat(csCols(x.j.cs)).concat([x.pos || '', x.corrSt ? CORR_T[x.corrSt] + (x.corrSt === 'no' && x.corrNames.length ? ' (' + x.corrNames.join(', ') + ')' : '') : 'нет данных', orgS(x.me)]);
 function authorTable() { const sum = hirschSummary(AU.prof.info.filter(a => a.h != null).map(a => ({ h: a.h, id: a.id })), AU.hx || []); const hs = sum.vals.map(x => H_BASE_NAME[x.base] + (x.base === 'openalex' ? ' (свой расчёт)' : '') + ': ' + x.v).join('; '); return [['Автор', AU.prof.info.map(a => a.name).join('; '), AU.prof.info.map(a => 'https://openalex.org/' + a.id).join(' '), hs ? 'Индекс Хирша — ' + hs + (sum.best ? '; наибольший — ' + sum.best.v + ' (' + H_BASE_NAME[sum.best.base] + ')' : '') : ''], profHead()].concat(aRows().map(profLine)); }
 function copyAuthor() { if (!AU.prof || AU.prof.err) return; toClip(authorTable().map(r => tsvRow(r.map(cellTxt))).join('\n'), 'astatus'); }
 function exportAuthor(kind) { if (!AU.prof || AU.prof.err) return; const t = authorTable(), nm = 'Публикации_автора_' + today(); download(nm + '.' + kind, kind === 'xlsx' ? xlsxBlob('Публикации автора', t) : csvBlob(t)); $('astatus').textContent = 'Файл ' + nm + '.' + kind + ' сохранён в папку загрузок.'; }
@@ -2430,41 +2524,53 @@ function runJournals() {
 function pickJournal(r, k) { JR.rows[r].pick = k; renderJournals(); saveState(true); }
 const qS = q => q ? 'Q' + q : 'без квартиля';
 function catsHtml(cats) { if (!cats) return ''; return `<details class="mini"><summary>квартили по разделам (${REF.sjYear})</summary><span class="dim">${cats.split(';').map(s => esc(s.trim())).join('<br>')}</span></details>`; }
-function journalCells(e, year) {
-  const f = journalFacts(e, year), sj = e.sj, wl = e.wl;
-  const is = f.issns.join(', ');
-  const c1 = `<b>${esc(f.title)}</b>` + (wl && sj && norm(wl.title.split(' | ')[0]) !== norm(sj.title) ? `<div class="dim">в Белом списке: ${esc(wl.title.split(' | ')[0])}</div>` : '') + (is ? `<div class="dim">ISSN ${esc(is)}</div>` : '') + (sj && sj.type ? `<div class="dim">в SCImago — ${SJ_TYPE[sj.type]}</div>` : '');
-  let q = '';
-  if (sj) { q = (year ? `<div class="dim">на ${year}:</div>` : '') + `${qChip(f.q, true)} <span class="dim">${f.qYear}${year && !f.qExact ? ' — за этот год данных нет' : ''}</span>` + ((year || f.qYear !== f.qNowYear) && f.qNow !== f.q ? `<br>${chip('check', 'сейчас ' + qS(f.qNow))} <span class="dim">${f.qNowYear}</span>` : (year && f.qYear !== f.qNowYear ? `<div class="dim">сейчас ${qS(f.qNow)} (${f.qNowYear})</div>` : ''))
-      + `<details class="mini"><summary>по годам</summary><span class="dim">${f.hist.slice().reverse().map(([y, qq, c]) => `${y}: ${qq ? 'Q' + qq : '—'}${c != null ? ', ' + fmtNum(c) : ''}`).join('<br>')}</span></details>` + catsHtml(f.cats); }
-  else q = chip('unk', 'нет в SCImago') + (e.sc ? '<div class="dim">в Scopus есть, квартиля SCImago нет</div>' : '');
-  const ifc = sj && f.cpd != null ? `<span class="big">${fmtNum(f.cpd)}</span> <span class="dim">${f.qYear}</span>` + (f.qYear !== f.qNowYear && f.cpdNow != null ? `<div class="dim">сейчас ${fmtNum(f.cpdNow)} (${f.qNowYear})</div>` : '') : chip('unk', 'нет в SCImago');
-  const w = wl ? wlText(wl, year || null) + `<div class="dim" title="справочник от ${REF.wlDate}">${wlLink(wl)}</div>` : nchip('нет в списке');
-  const idx = idxText(wl, e.sc, year || null);
-  const links = [sj ? lnk(`https://www.scimagojr.com/journalsearch.php?q=${sj.sid}&tip=sid`, 'SCImago') : lnk('https://www.scimagojr.com/journalsearch.php?q=' + encodeURIComponent(f.title), 'SCImago: поиск'), e.sc && e.sc.id ? lnk(scLink(e.sc), 'Scopus') : (sj ? lnk(scopusSource(sj.sid), 'Scopus') : lnk('https://www.scopus.com/sources.uri', 'Scopus Sources')), f.issns[0] ? lnk('https://mjl.clarivate.com/search-results?issn=' + f.issns[0], 'есть ли в WoS') : '', lnk('https://jcr.clarivate.com/', 'JCR')].filter(Boolean).join(' · ');
-  return { f, html: `<td>${c1}</td><td>${q}</td><td>${ifc}</td><td>${w}</td><td>${idx}<div class="dim" style="margin-top:3px">${links}</div></td>` };
+/* 0.9, правка 5: журнал — строка-ведомость. Крупно: квартиль SCImago, импакт-фактор, уровень Белого списка; рядом «сейчас»;
+   квартиль по годам — плашками «год Q»; индексация; строка CiteScore Scopus (правка 6); ссылки и примечания. */
+const big = (v, sub, cls) => `<div class="jbig${cls ? ' ' + cls : ''}">${v}</div>${sub ? `<div class="dim">${sub}</div>` : ''}`;
+function idxDots(wl, sc, year) {
+  const d = (n, on, t) => `<span class="${on ? 'on' : 'off'}" title="${esc(t || '')}">${on ? '●' : '○'} ${n}</span>`;
+  const sct = sc ? scStatusText(sc) : '';
+  return `<span class="idx dim">${wl ? d('WoS CC', wl.wos, 'по данным Белого списка') + ' &nbsp;' : ''}${d('Scopus' + (sc && sc.covText ? ' ' + esc(sc.covText) : ''), !!(sc ? sc.status === 1 : wl && wl.scopus), sc ? 'Scopus Source List ' + REF.scDate + ': ' + sct : 'по данным Белого списка')}${wl ? ' &nbsp;' + d('RSCI', wl.rsci, 'по данным Белого списка') : ''}</span>`;
+}
+function journalSheet(e, year, head, notes) {
+  const f = journalFacts(e, year), sj = e.sj, wl = e.wl, is = f.issns.join(' · ');
+  let h = `<div class="jsheet">${head || ''}<div class="jtop"><div><div class="jname">${esc(f.title)}</div>`
+    + (wl && sj && norm(wl.title.split(' | ')[0]) !== norm(sj.title) ? `<div class="dim">в Белом списке: ${esc(wl.title.split(' | ')[0])}</div>` : '')
+    + `<div class="jmeta">${is ? 'ISSN ' + esc(is) : 'ISSN нет'}${sj && sj.type ? ' · ' + SJ_TYPE[sj.type] : (!sj && e.cs && CS_TYPE[e.cs.type] && e.cs.type !== 'j' ? ' · ' + CS_TYPE[e.cs.type] : '')}</div></div><div>${idxDots(wl, e.sc, year || null)}</div></div>`;
+  h += '<div class="jgrid">';
+  if (sj) {
+    const nowDiff = f.qNowYear !== f.qYear;
+    h += `<div><div class="cap">Квартиль SCImago ${f.qYear}</div>${big(f.q ? 'Q' + f.q : '—', (year && !f.qExact ? `за ${year} данных нет — взят ${f.qYear}` : '') + (nowDiff ? `${year && !f.qExact ? '<br>' : ''}сейчас (${f.qNowYear}): ${f.qNow !== f.q ? chip('check', qS(f.qNow)) : qS(f.qNow)}` : (year ? '' : 'сейчас')))}</div>`;
+    h += `<div><div class="cap">Импакт-фактор</div>${f.cpd != null ? big(fmtNum(f.cpd), `цит. на документ SCImago, ${f.qYear}` + (nowDiff && f.cpdNow != null ? `<br>сейчас (${f.qNowYear}): ${fmtNum(f.cpdNow)}` : '')) : big('—', 'нет данных', 't')}</div>`;
+  } else h += `<div><div class="cap">Квартиль SCImago</div>${big(chip('unk', 'нет в SCImago'), e.sc || e.cs ? 'в Scopus есть, квартиля SCImago нет' : '', 't')}</div><div><div class="cap">Импакт-фактор</div>${big('—', 'нет в SCImago', 't')}</div>`;
+  if (wl) { const a = wlAt(wl, year || null); h += `<div><div class="cap">Белый список${year ? ' ' + year : ''}</div>${a.excluded ? big(chip('check', 'исключён ' + wl.disc), '', 't') : big(a.lv || '—', (a.lv ? 'уровень' : 'без уровня') + (a.y ? ` (${a.y})` : '') + (!a.excluded && (a.curExcl || a.cur !== a.lv) ? '<br>' + chip('check', a.curExcl ? 'сейчас исключён ' + wl.disc : 'сейчас ' + (a.cur ? 'уровень ' + a.cur : 'без уровня')) : ''))}</div>`; }
+  else h += `<div><div class="cap">Белый список</div>${big('нет', 'нет в списке', 't')}</div>`;
+  h += `<div><div class="cap">Квартиль SCImago по годам</div>${sj ? yearChips(sj, year || null, 6) + (Object.keys(sj.hist).length > 6 ? `<details class="mini"><summary>все годы</summary>${yearChips(sj, year || null, 0)}</details>` : '') + catsHtml(f.cats) : '<span class="dim">нет данных</span>'}</div>`;
+  h += '</div>' + csLine(e.cs, sj ? f.qNow : null);
+  const links = [sj ? lnk(`https://www.scimagojr.com/journalsearch.php?q=${sj.sid}&tip=sid`, 'SCImago') : lnk('https://www.scimagojr.com/journalsearch.php?q=' + encodeURIComponent(f.title), 'SCImago: поиск'), e.sc && e.sc.id ? lnk(scLink(e.sc), 'Scopus') : (sj ? lnk(scopusSource(sj.sid), 'Scopus') : lnk('https://www.scopus.com/sources.uri', 'Scopus Sources')), wl ? `<span title="справочник от ${REF.wlDate}">${wlLink(wl)} Белого списка</span>` : '', f.issns[0] ? lnk('https://mjl.clarivate.com/search-results?issn=' + f.issns[0], 'есть ли в WoS') : '', lnk('https://jcr.clarivate.com/', 'JCR')].filter(Boolean).join(' · ');
+  const nh = notesHtml(notes || []);
+  h += `<div class="jfoot"><span class="dim">${links}</span>${e.sc ? `<span class="dim">Scopus: ${esc(scStatusText(e.sc))}</span>` : ''}${nh ? `<span>${chip('check', 'примечания')} ${nh}</span>` : ''}</div>`;
+  return { f, html: h + '</div>' };
 }
 function renderJournals() {
   const el = $('outJournal'); if (!el) return;
   if (!JR.rows.length) { el.innerHTML = ''; $('jOut').style.display = 'none'; return; }
   let h = `<h2>Журналы (${JR.rows.length})${JR.year ? ` <span class="sub">· на ${JR.year} год</span>` : ''}</h2>`;
-  h += `<table class="t pubs"><tr><th style="width:13%">Запрос</th><th style="width:19%">Издание</th><th style="width:14%">Квартиль<div class="sub">SCImago${JR.year ? ', на ' + JR.year : ''}</div></th><th style="width:10%">Импакт-фактор<div class="sub">цит. на документ за 2 года, SCImago</div></th><th style="width:14%">Белый список</th><th>Индексация и ссылки</th><th style="width:14%">Примечания</th></tr>`;
   JR.rows.forEach((r, ri) => {
-    const res = r.res;
-    if (r.pick != null) { const hit = res.hits[r.pick], c = journalCells(hit.e, JR.year); const notes = res.notes.concat(c.f.notes).concat(hit.how === 'similar' ? [`название совпало не полностью (${Math.round(hit.score * 100)} %) — убедитесь, что это тот журнал`] : []).concat(hit.how === 'title' && !res.issns.length ? ['найден по названию — надёжнее сверить по ISSN'] : []);
-      h += `<tr><td>${esc(r.q)}${res.hits.length > 1 ? `<div><button class="linkbtn" onclick="pickJournal(${ri},null)">другие варианты (${res.hits.length - 1})</button></div>` : ''}</td>${c.html}<td class="notes">${notesHtml(notes)}</td></tr>`; return; }
-    if (!res.hits.length) { h += `<tr><td>${esc(r.q)}</td><td colspan="6">${chip('unk', 'не найдено в справочниках')} <span class="dim">В SCImago${scHas() ? ', списке источников Scopus' : ''} и Белом списке (от ${REF.wlDate}) такого издания нет. Это не значит, что журнал нигде не индексируется: проверьте написание или впишите ISSN. Поиск: ${lnk('https://www.scimagojr.com/journalsearch.php?q=' + encodeURIComponent(r.q), 'SCImago')} · ${lnk('https://journalrank.rcsi.science/ru/record-sources/?s=' + encodeURIComponent(r.q), 'Белый список')} · ${lnk('https://mjl.clarivate.com/search-results?search=' + encodeURIComponent(r.q), 'WoS')}</span></td></tr>`; return; }
-    h += `<tr><td>${esc(r.q)}</td><td colspan="6">${chip('check', 'выберите')} <span class="dim">Однозначно определить журнал нельзя — похожие издания:</span>` + res.hits.map((x, k) => `<div style="margin-top:4px"><button class="sec small" onclick="pickJournal(${ri},${k})">Это он</button> <b>${esc(x.e.title)}</b> <span class="dim">${[x.e.issns.map(fmtIssn).join(', '), x.e.sj ? 'SCImago ' + qS(x.e.sj.q) : 'нет в SCImago', x.e.wl ? 'Белый список' : '', x.e.sc ? 'Scopus' : '', x.how === 'issn' ? 'по ISSN' : 'совпадение ' + Math.round(x.score * 100) + ' %'].filter(Boolean).map(esc).join(' · ')}</span></div>`).join('') + (res.notes.length ? `<div class="dim">${res.notes.map(esc).join('; ')}</div>` : '') + '</td></tr>';
+    const res = r.res, qh = `<div class="cap" style="margin-bottom:6px">Запрос: <span style="text-transform:none;letter-spacing:0;color:var(--ink)">${esc(r.q)}</span>${r.pick != null && res.hits.length > 1 ? ` &nbsp;<button class="linkbtn" style="font-size:12px" onclick="pickJournal(${ri},null)">другие варианты (${res.hits.length - 1})</button>` : ''}</div>`;
+    if (r.pick != null) { const hit = res.hits[r.pick], c0 = journalFacts(hit.e, JR.year); const notes = res.notes.concat(c0.notes).concat(hit.how === 'similar' ? [`название совпало не полностью (${Math.round(hit.score * 100)} %) — убедитесь, что это тот журнал`] : []).concat(hit.how === 'title' && !res.issns.length ? ['найден по названию — надёжнее сверить по ISSN'] : []);
+      h += journalSheet(hit.e, JR.year, qh, notes).html; return; }
+    if (!res.hits.length) { h += `<div class="jsheet">${qh}${chip('unk', 'не найдено в справочниках')} <span class="dim">В SCImago${scHas() ? ', списке источников Scopus' : ''}${csHas() ? ', CiteScore' : ''} и Белом списке (от ${REF.wlDate}) такого издания нет. Это не значит, что журнал нигде не индексируется: проверьте написание или впишите ISSN. Поиск: ${lnk('https://www.scimagojr.com/journalsearch.php?q=' + encodeURIComponent(r.q), 'SCImago')} · ${lnk('https://journalrank.rcsi.science/ru/record-sources/?s=' + encodeURIComponent(r.q), 'Белый список')} · ${lnk('https://mjl.clarivate.com/search-results?search=' + encodeURIComponent(r.q), 'WoS')}</span></div>`; return; }
+    h += `<div class="jsheet">${qh}${chip('check', 'выберите')} <span class="dim">Однозначно определить журнал нельзя — похожие издания:</span>` + res.hits.map((x, k) => `<div style="margin-top:6px"><button class="sec small" onclick="pickJournal(${ri},${k})">Это он</button> <b>${esc(x.e.title)}</b> <span class="dim">${[x.e.issns.map(fmtIssn).join(', '), x.e.sj ? 'SCImago ' + qS(x.e.sj.q) : 'нет в SCImago', x.e.wl ? 'Белый список' : '', x.e.sc || x.e.cs ? 'Scopus' : '', x.how === 'issn' ? 'по ISSN' : 'совпадение ' + Math.round(x.score * 100) + ' %'].filter(Boolean).map(esc).join(' · ')}</span></div>`).join('') + (res.notes.length ? `<div class="dim">${res.notes.map(esc).join('; ')}</div>` : '') + '</div>';
   });
-  h += '</table>';
   el.innerHTML = h; $('jOut').style.display = '';
 }
 function journalTable() {
-  const y = JR.year, L = [['Запрос', 'Издание', 'ISSN', 'Квартиль SCImago' + (y ? ' (' + y + ')' : ''), 'Год квартиля', 'Квартиль сейчас (' + REF.sjYear + ')', 'Импакт-фактор (SCImago, цит. на документ за 2 года)', 'Белый список' + (y ? ' (' + y + ')' : ''), 'Индексация (Белый список)', 'Scopus (список источников)', 'Ссылка SCImago', 'Примечания']];
+  const y = JR.year, L = [['Запрос', 'Издание', 'ISSN', 'Квартиль SCImago' + (y ? ' (' + y + ')' : ''), 'Год квартиля', 'Квартиль сейчас (' + REF.sjYear + ')', 'Импакт-фактор (SCImago, цит. на документ за 2 года)', 'Белый список' + (y ? ' (' + y + ')' : ''), 'Индексация (Белый список)', 'Scopus (список источников)'].concat(csHead()).concat(['Ссылка SCImago', 'Примечания'])];
   JR.rows.forEach(r => {
     if (r.pick == null) { L.push([r.q, r.res.hits.length ? 'не выбран: ' + r.res.hits.map(x => x.e.title).join('; ') : 'не найдено в справочниках']); return; }
     const hit = r.res.hits[r.pick], e = hit.e, f = journalFacts(e, y);
-    L.push([r.q, f.title, f.issns.join(', '), e.sj ? qS(f.q) : 'нет в SCImago', e.sj ? f.qYear : '', e.sj ? qS(f.qNow) : '', e.sj && f.cpd != null ? Math.round(f.cpd * 100) / 100 : '', wlS(e.wl, y || null), idxS(e.wl), scS(e.sc, y || null), e.sj ? `https://www.scimagojr.com/journalsearch.php?q=${e.sj.sid}&tip=sid` : '', r.res.notes.concat(f.notes).join('; ')]);
+    L.push([r.q, f.title, f.issns.join(', '), e.sj ? qS(f.q) : 'нет в SCImago', e.sj ? f.qYear : '', e.sj ? qS(f.qNow) : '', e.sj && f.cpd != null ? Math.round(f.cpd * 100) / 100 : '', wlS(e.wl, y || null), idxS(e.wl), scS(e.sc, y || null)].concat(csCols(e.cs)).concat([e.sj ? `https://www.scimagojr.com/journalsearch.php?q=${e.sj.sid}&tip=sid` : '', r.res.notes.concat(f.notes).join('; ')]));
   });
   return L;
 }
@@ -2587,4 +2693,70 @@ function docText() { return DOC.recs.filter(r => r.on && r.text.trim()).map((r, 
 function docAdd() { if (!DOC) return; $('list').value = docText() + '\n'; countEntries(); DOC = null; renderDoc(); saveState(true); goTo('inp'); }
 function docRun() { if (!DOC) return; $('list').value = docText() + '\n'; countEntries(); DOC = null; renderDoc(); runList(); }
 function docClose() { DOC = null; renderDoc(); }
+
+/* ===== 0.9: подсказки при вводе журнала (правка 2), источники данных ===== */
+
+/* ----- Подсказки при вводе журнала. Только встроенные справочники (SCImago, Белый список, Scopus, CiteScore), без интернета.
+   Совпадение — по началу названия или по началу любого слова («alloys» → Journal of Alloys and Compounds), кириллица тоже.
+   Сначала названия, которые начинаются с введённого, потом остальные; внутри — по алфавиту. Подсказка только помогает ввести:
+   если вариант не выбран, поиск работает как обычно. Функция suggestJournals — чистая, проверяется в evals/run.js. */
+function suggestJournals(q, max) {
+  max = max || 12; const nq = norm(q); if (nq.length < 2 || !REF) return [];
+  if (/^\d{4}\s*-?\s*\d{0,3}[\dxх]?$/i.test(String(q).trim())) return [];  // ISSN подсказкой не нужен
+  const J = jIndex(), hits = [];
+  for (let id = 0; id < J.list.length; id++) { const x = J.list[id]; const r = x.nn.startsWith(nq) ? 0 : ((' ' + x.nn).indexOf(' ' + nq) >= 0 ? 1 : -1); if (r >= 0) hits.push([r, x]); }
+  const rec = { sj: sjRec, wl: wlRec, sc: scRec, cs: csRec }, seen = new Set(), out = [];
+  const title = x => x.k === 'sj' ? REF.sj[x.i][0] : (x.k === 'wl' ? REF.wl[x.i][0].split(' | ')[0] : (x.k === 'sc' ? REF.sc[x.i][0] : REF.cs[x.i][2]));
+  hits.sort((a, b) => a[0] - b[0] || (a[1].nn < b[1].nn ? -1 : a[1].nn > b[1].nn ? 1 : 0));
+  for (const [r, x] of hits) {
+    if (out.length >= max) break;
+    const rc = rec[x.k](x.i), e = journalEntity(rc.issns, { k: x.k, rec: rc }); if (seen.has(e.key)) continue; seen.add(e.key);
+    const wa = e.wl ? wlAt(e.wl, null) : null;
+    out.push({ title: title(x), e, issn: e.issns[0] ? fmtIssn(e.issns[0]) : '', marks: [e.sj ? 'SCImago ' + (e.sj.q ? 'Q' + e.sj.q : 'без квартиля') : '', e.wl ? (wa.excluded || wa.curExcl ? 'БС исключён' : (wa.cur ? 'БС ' + wa.cur : 'БС без уровня')) : '', e.sc ? (e.sc.disc || e.sc.flag ? 'Scopus исключён' : 'Scopus') : (e.cs ? 'Scopus' : '')].filter(Boolean) });
+  }
+  return out;
+}
+const JSUG = { items: [], on: -1, line: null };
+function jsugLine() { const t = $('jq'), v = t.value, p = t.selectionStart, a = v.lastIndexOf('\n', p - 1) + 1, b = v.indexOf('\n', p); return { a, b: b < 0 ? v.length : b, text: v.slice(a, b < 0 ? v.length : b) }; }
+function jsugHide() { const b = $('jsug'); b.style.display = 'none'; b.innerHTML = ''; JSUG.items = []; JSUG.on = -1; }
+function jsugShow() {
+  if (!REF) return; const L = jsugLine(); JSUG.line = L; const q = L.text.trim();
+  if (q.length < 2) { jsugHide(); return; }
+  JSUG.items = suggestJournals(q, 12); JSUG.on = -1; const b = $('jsug');
+  if (!JSUG.items.length) { if (/^\d/.test(q)) { jsugHide(); return; } b.innerHTML = '<div class="none">В справочниках нет названий, начинающихся так. Можно искать и так — с опечатками и сокращениями — или по ISSN.</div>'; b.style.display = 'block'; return; }
+  b.innerHTML = JSUG.items.map((x, i) => `<div class="it" role="option" data-i="${i}" onmousedown="event.preventDefault();jsugPick(${i})"><div>${esc(x.title)}</div><div class="m">${esc([x.issn ? 'ISSN ' + x.issn : 'ISSN нет'].concat(x.marks).join(' · '))}</div></div>`).join('');
+  b.style.display = 'block';
+}
+function jsugMark() { [...$('jsug').querySelectorAll('.it')].forEach((d, i) => { d.classList.toggle('on', i === JSUG.on); if (i === JSUG.on) d.scrollIntoView({ block: 'nearest' }); }); }
+/* Выбор подставляет в текущую строку название и ISSN — поиск по ISSN надёжнее */
+function jsugPick(i) {
+  const x = JSUG.items[i], L = JSUG.line || jsugLine(); if (!x) return; const t = $('jq'), v = t.value, ins = x.title + (x.issn ? ' ' + x.issn : '');
+  t.value = v.slice(0, L.a) + ins + v.slice(L.b); const p = L.a + ins.length; t.focus(); t.setSelectionRange(p, p); jsugHide(); saveState(true);
+}
+function initJsug() {
+  const t = $('jq'); if (!t) return; let tm = null;
+  t.addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(jsugShow, 120); });
+  t.addEventListener('keydown', e => {
+    if ($('jsug').style.display !== 'block' || e.ctrlKey || e.metaKey) return;
+    if (e.key === 'ArrowDown' && JSUG.items.length) { e.preventDefault(); JSUG.on = (JSUG.on + 1) % JSUG.items.length; jsugMark(); }
+    else if (e.key === 'ArrowUp' && JSUG.items.length) { e.preventDefault(); JSUG.on = JSUG.on <= 0 ? JSUG.items.length - 1 : JSUG.on - 1; jsugMark(); }
+    else if (e.key === 'Enter' && JSUG.on >= 0) { e.preventDefault(); jsugPick(JSUG.on); }
+    else if (e.key === 'Escape') { e.preventDefault(); jsugHide(); }
+  });
+  t.addEventListener('blur', () => setTimeout(jsugHide, 150));
+}
+
+/* ----- Источники данных: в «Источники данных» на главной и строкой внизу подстраницы ----- */
+function sourcesList() {
+  if (!REF) return [];
+  return [`Квартиль и импакт-фактор («цитирований на документ за 2 года») — SCImago Journal & Country Rank, ${REF.sjYears[0]}–${REF.sjYear}.`,
+    `Белый список — справочник на ${REF.wlDate}; свежий уровень — с сайта Белого списка (journalrank.rcsi.science).`,
+    scHas() ? `Индексация в Scopus — Scopus Source List, ${REF.scDate}.` : '',
+    csHas() ? `CiteScore, процентиль и квартиль Scopus — ${csSrc(null)}; ссылка у каждого значения ведёт на страницу издания в Scopus.` : '',
+    'Статьи — Crossref и OpenAlex; авторы — OpenAlex и реестр ORCID; corresponding author и организации — OpenAlex.'].filter(Boolean);
+}
+function renderSources() {
+  const L = sourcesList(); if ($('srcList')) $('srcList').innerHTML = L.map(x => '<li>' + esc(x) + '</li>').join('');
+  if ($('srcFoot')) $('srcFoot').innerHTML = L.length ? '<div class="cap" style="margin-bottom:4px">Источники данных</div><ul style="margin:0">' + L.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>' : '';
+}
 

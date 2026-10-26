@@ -1,4 +1,4 @@
-ПРОВЕРКА ПУБЛИКАЦИЙ — версия 0.8 от 21.10.2026
+ПРОВЕРКА ПУБЛИКАЦИЙ — версия 0.9 от 26.10.2026
 
 Что это: веб-страница. Показывает факты о публикациях и авторах; выводов не делает.
   1. Список публикаций (снимок или текст) → по каждой: квартиль, Белый список, импакт-фактор (цит. на документ SCImago), первый и corresponding автор, ссылки;
@@ -29,6 +29,7 @@
   python3 mkdata_add.py "scimagojr 2006.csv" … "scimagojr 2020.csv"
   Сейчас в справочнике SCImago 2006–2025 (0.7.9).
   Список источников Scopus (0.8): python3 mkdata_scopus.py ext_list_Sep_2026.xlsx (публичный файл со scopus.com/sources) — добавляет раздел sc в data/ref.json.
+  CiteScore (0.9): python3 mkdata_citescore.py CiteScore_2025.xlsx (файл от Elsevier, в репозиторий не кладётся) — раздел cs; запускать после mkdata_scopus.py. Новый файл — раз в год (CiteScore 2026 — к июню 2027).
   npm install && python3 build.py
 Ключи (с 0.7.3): если рядом с build.py лежит openalex_key.txt (ключ OpenAlex) или orcid_token.txt (токен ORCID /read-public),
   они встраиваются в страницу и видны в её коде. Сами файлы в исходники и в текст проекта не входят — хранятся у Германа.

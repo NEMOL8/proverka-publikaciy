@@ -51,6 +51,32 @@ function findSc(issns, title) {
   return [scRec(a[0]), a.length === 1 ? 'title' : 'ambiguous'];
 }
 
+/* ---------- 1а. CiteScore Scopus (0.9, правка 6) ----------
+   data.cs = { year, subj: [тематика], rows: [[Scopus Source ID, 'ISSN EISSN', название (если нет в SCImago и списке Scopus), CiteScore, SNIP, тип, [[тематика, процентиль, квартиль, место, из скольких], …]]] }
+   Тематики — наилучшая первой. Собирается mkdata_citescore.py из файла Elsevier. Это отдельный показатель: квартиль SCImago не заменяет.
+   Elsevier разрешил показ в бесплатной открытой утилите при указании источника и ссылке — подпись CS_SRC и ссылка на Scopus у каждого значения. */
+function loadCs(R, cs) {
+  R.cs = cs.rows; R.csYear = cs.year; R.csSubj = cs.subj || []; R.csId = new Map(); R.csIssn = new Map();
+  cs.rows.forEach((r, i) => { if (r[0]) R.csId.set(r[0], i); String(r[1] || '').split(' ').filter(Boolean).forEach(x => { const a = R.csIssn.get(x); if (a) a.push(i); else R.csIssn.set(x, [i]); }); });
+}
+const csHas = () => !!(REF && REF.cs);
+const CS_TYPE = { j: 'журнал', k: 'книжная серия', p: 'труды конференций', d: 'отраслевой журнал' };
+function csRec(i) {
+  const r = REF.cs[i], subs = (r[6] || []).map(s => ({ name: REF.csSubj[s[0]] || '', pct: s[1], q: s[2], rank: s[3], of: s[4] }));
+  return { sid: r[0], issns: String(r[1] || '').split(' ').filter(Boolean), title: r[2] || '', v: r[3], snip: r[4], type: r[5] || '', subs, best: subs[0] || null, q: subs[0] ? subs[0].q : null, year: REF.csYear };
+}
+/* Издание в справочнике CiteScore: по Scopus Source ID (он же Sourceid SCImago), иначе по ISSN — только если ISSN указывает на одно издание */
+function findCs(sids, issns) {
+  if (!csHas()) return null;
+  for (const s of (sids || [])) { const i = s != null ? REF.csId.get(+s) : undefined; if (i != null) return csRec(i); }
+  const hit = new Set(); (issns || []).map(normIssn).forEach(x => (REF.csIssn.get(x) || []).forEach(i => hit.add(i)));
+  return hit.size === 1 ? csRec([...hit][0]) : null;
+}
+const csSrc = cs => `Scopus CiteScore ${cs ? cs.year : (REF && REF.csYear) || ''}, © Elsevier B.V.`;
+const csLink = cs => cs && cs.sid ? 'https://www.scopus.com/sourceid/' + cs.sid : '';
+/* Короткая запись для таблиц и выгрузки: «10,7 Q1» */
+const csShort = cs => !cs ? '' : (cs.v != null ? fmtNum(cs.v) + ' ' : '') + (cs.q ? 'Q' + cs.q : 'без квартиля');
+
 /* ---------- 2. Режим «Журнал» (правка 5): название или ISSN → издание по справочникам SCImago, Белого списка и Scopus ---------- */
 const ISSN_Q = /\b(\d{4})\s*[-–]?\s*(\d{3}[\dXxХх])\b/g;
 const ABBR = { j: 'journal', zh: 'zhurnal', 'вузов': 'высших учебных заведений', 'вуз': 'высших учебных заведений', 'ран': 'российской академии наук', 'мгу': 'московского университета', 'спбгу': 'санкт петербургского университета' };  // остальные сокращения («Phys.», «Rev.», «Compd.») узнаются как начало слова
@@ -72,22 +98,24 @@ function jIndex() {
   if (REF._ji) return REF._ji; const list = [], pre = new Map();
   const addT = (k, i, t) => { const toks = jqTokens(t).map(x => isCyr(x) ? translit(x) : x), id = list.length; list.push({ k, i, nn: norm(t), toks }); new Set(toks.map(x => x.slice(0, 3))).forEach(p => { let a = pre.get(p); if (!a) pre.set(p, a = []); a.push(id); }); };
   REF.sj.forEach((r, i) => addT('sj', i, r[0])); REF.wl.forEach((r, i) => r[0].split(' | ').forEach(t => addT('wl', i, t))); if (scHas()) REF.sc.forEach((r, i) => addT('sc', i, r[0]));
+  if (csHas()) REF.cs.forEach((r, i) => { if (r[2]) addT('cs', i, r[2]); });  // у CiteScore название хранится, только если его нет в других справочниках
   return (REF._ji = { list, pre });
 }
 function tokSim(A, B) { if (!A.length || !B.length) return 0; const used = new Set(), seq = []; let m = 0; A.forEach(a => { let k = B.findIndex((b, i) => !used.has(i) && a === b); if (k < 0) k = B.findIndex((b, i) => !used.has(i) && jqTokEq(a, b)); if (k >= 0) { used.add(k); seq.push(k); m += jqTokEq(a, B[k]); } }); const ordered = seq.every((k, i) => !i || k > seq[i - 1]); return 2 * m / (A.length + B.length) * (ordered ? 1 : 0.92); }
 /* Издание по всем трём справочникам: собрать записи, связанные общими ISSN */
 function journalEntity(issns, seed) {
-  const e = { sj: null, wl: null, sc: null, issns: new Set(), notes: [] };
+  const e = { sj: null, wl: null, sc: null, cs: null, issns: new Set(), notes: [] };
   (issns || []).map(normIssn).filter(Boolean).forEach(x => e.issns.add(x));
   if (seed) e[seed.k] = seed.rec;
   for (let pass = 0; pass < 2; pass++) {
-    [e.sj, e.wl, e.sc].filter(Boolean).forEach(r => r.issns.forEach(x => e.issns.add(normIssn(x))));
+    [e.sj, e.wl, e.sc, e.cs].filter(Boolean).forEach(r => r.issns.forEach(x => e.issns.add(normIssn(x))));
     const is = [...e.issns];
     if (!e.sj) { const h = new Set(); is.forEach(x => (REF.sjIssn.get(x) || []).forEach(i => h.add(i))); if (h.size) { e.sj = sjRec([...h][0]); if (h.size > 1) e.notes.push('в SCImago несколько изданий с этим ISSN — взято первое, проверьте'); } }
     if (!e.wl) { const h = new Set(); is.forEach(x => (REF.wlIssn.get(x) || []).forEach(i => h.add(i))); if (h.size) { e.wl = wlRec([...h][0]); if (h.size > 1) e.notes.push('в Белом списке несколько изданий с этим ISSN — взято первое, проверьте'); } }
     if (!e.sc && scHas()) { const h = new Set(); is.forEach(x => (REF.scIssn.get(x) || []).forEach(i => h.add(i))); if (h.size) e.sc = scRec([...h][0]); }
+    if (!e.cs) e.cs = findCs([e.sj && e.sj.sid, e.sc && e.sc.id], is);
   }
-  e.issns = [...e.issns]; e.title = (e.sj && e.sj.title) || (e.wl && e.wl.title.split(' | ')[0]) || (e.sc && e.sc.title) || '';
+  e.issns = [...e.issns]; e.title = (e.sj && e.sj.title) || (e.wl && e.wl.title.split(' | ')[0]) || (e.sc && e.sc.title) || (e.cs && e.cs.title) || '';
   e.key = e.issns.slice().sort().join(' ') || norm(e.title);
   return e;
 }
@@ -98,14 +126,14 @@ function findJournalQuery(q) {
   const title = q.replace(ISSN_Q, ' ').replace(/\b(issn|eissn|e-issn|p-issn)\b\s*:?/gi, ' ').replace(/\s+/g, ' ').trim();
   const seen = new Map(), add = (e, score, how) => { const o = seen.get(e.key); if (!o || o.score < score) seen.set(e.key, { e, score, how }); };
   if (out.issns.length) {
-    const e = journalEntity(out.issns); if (e.sj || e.wl || e.sc) add(e, 1, 'issn');
-    if (title.length >= 3 && (e.sj || e.wl || e.sc)) { const s = Math.max(e.sj ? titleSim(title, e.sj.title) : 0, e.wl ? Math.max(...e.wl.title.split(' | ').map(t => titleSim(title, t))) : 0, e.sc ? titleSim(title, e.sc.title) : 0); if (s < 0.6) out.notes.push(`по ISSN найдено «${e.title}», а название в запросе другое — проверьте`); }
+    const e = journalEntity(out.issns); if (e.sj || e.wl || e.sc || e.cs) add(e, 1, 'issn');
+    if (title.length >= 3 && (e.sj || e.wl || e.sc || e.cs)) { const s = Math.max(e.sj ? titleSim(title, e.sj.title) : 0, e.wl ? Math.max(...e.wl.title.split(' | ').map(t => titleSim(title, t))) : 0, e.sc ? titleSim(title, e.sc.title) : 0); if (s < 0.6) out.notes.push(`по ISSN найдено «${e.title}», а название в запросе другое — проверьте`); }
   }
   if (!seen.size && title.length >= 2) {
     const J = jIndex(), qt = jqTokens(title).map(x => isCyr(x) ? translit(x) : x), nt = norm(title), cnt = new Map();
     new Set(qt.map(x => x.slice(0, 3))).forEach(pf => (J.pre.get(pf) || []).forEach(id => cnt.set(id, (cnt.get(id) || 0) + 1)));
     const need = Math.max(1, Math.ceil(new Set(qt.map(x => x.slice(0, 3))).size * 0.5));
-    cnt.forEach((c, id) => { if (c < need) return; const x = J.list[id]; const sc = x.nn === nt ? 1 : Math.min(0.99, tokSim(qt, x.toks)); if (sc < 0.6) return; const rec = { sj: sjRec, wl: wlRec, sc: scRec }[x.k](x.i); add(journalEntity(rec.issns, { k: x.k, rec }), sc, sc === 1 ? 'title' : 'similar'); });
+    cnt.forEach((c, id) => { if (c < need) return; const x = J.list[id]; const sc = x.nn === nt ? 1 : Math.min(0.99, tokSim(qt, x.toks)); if (sc < 0.6) return; const rec = { sj: sjRec, wl: wlRec, sc: scRec, cs: csRec }[x.k](x.i); add(journalEntity(rec.issns, { k: x.k, rec }), sc, sc === 1 ? 'title' : 'similar'); });
   }
   out.hits = [...seen.values()].sort((a, b) => b.score - a.score || ((b.e.sj ? 1 : 0) - (a.e.sj ? 1 : 0))).slice(0, 8);
   const top = out.hits[0];
@@ -121,7 +149,8 @@ function journalFacts(e, year) {
   if (e.sj) { const jv = journalVerdict({ sj: e.sj, wl: null, sjHow: 'issn', wlHow: null }, year || null, null, null); Object.assign(f, { q: jv.qY, qYear: jv.sjYear, qExact: year ? jv.sjExact : true, qNow: jv.qL, qNowYear: jv.yL, cpd: jv.cpd, cpdNow: jv.cpdLast, hist: Object.keys(e.sj.hist).map(y => [+y, e.sj.hist[y].q, e.sj.hist[y].cpd]), cats: e.sj.cats, sid: e.sj.sid, type: e.sj.type }); if (year && !jv.sjExact) f.notes.push(jv.notes.find(n => /взят/.test(n)) || ''); }
   if (e.wl) { const a = wlAt(e.wl, year || null); Object.assign(f, { wlLv: a.excluded ? 'excl' : a.lv, wlYear: a.y, wlNow: a.curExcl ? 'excl' : a.cur, wlDisc: e.wl.disc, idx: { wos: e.wl.wos, scopus: e.wl.scopus, rsci: e.wl.rsci } }); if (e.wl.state === 1 && e.wl.notice) f.notes.push('примечание Белого списка: ' + e.wl.notice); }
   if (e.sc) { f.sc = scStatusText(e.sc); f.scId = e.sc.id; if (year) f.notes.push(...scAt(e.sc, year).notes); }
-  if (!e.sj && e.sc) f.notes.push('в Scopus есть, квартиля SCImago нет');
+  if (e.cs) f.cs = e.cs;
+  if (!e.sj && (e.sc || e.cs)) f.notes.push('в Scopus есть, квартиля SCImago нет' + (e.cs && e.cs.q ? ' — есть квартиль по CiteScore ' + e.cs.year : ''));
   f.notes = f.notes.filter(Boolean);
   return f;
 }
@@ -333,4 +362,4 @@ function findDocRecords(pages) {
 /* Квартиль, указанный в самом документе или списке («Q1», «Квартиль: Q2») */
 function declQuartile(t) { const m = String(t || '').match(/(?:^|[\s(.,;|])(?:квартиль\s*:?\s*)?Q\s?([1-4])(?!\w|\.\d)/i); return m ? +m[1] : null; }
 
-if (typeof module !== 'undefined') module.exports = { loadSc, parseCoverage, scAt, findSc, findJournalQuery, journalFacts, titleSim, idFromOrcidItem, collectAuthorIds, parseHirschPage, hirschSummary, findDocRecords, declQuartile };
+if (typeof module !== 'undefined') module.exports = { loadCs, findCs, csRec, csShort, loadSc, parseCoverage, scAt, findSc, findJournalQuery, journalFacts, titleSim, idFromOrcidItem, collectAuthorIds, parseHirschPage, hirschSummary, findDocRecords, declQuartile };

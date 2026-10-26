@@ -2,7 +2,7 @@
 // Запуск: node evals/run.js
 const fs = require('fs'), path = require('path'); const B = path.join(__dirname, '..');
 const src = fs.readFileSync(B + '/src/core.js', 'utf8').replace(/if \(typeof module[^\n]*\n?$/m, '') + fs.readFileSync(B + '/src/net.js', 'utf8').replace(/if \(typeof module[^\n]*\n?$/m, '') + fs.readFileSync(B + '/src/extra.js', 'utf8').replace(/if \(typeof module[^\n]*\n?$/m, '');
-const A = new Function(src + '\nreturn {loadSc,parseCoverage,scAt,findSc,findJournalQuery,journalFacts,titleSim,idFromOrcidItem,collectAuthorIds,parseHirschPage,hirschSummary,findDocRecords,declQuartile,orgHit,leaderByOrg,ocrQuality,isElibList,CACHE,cacheKey,judgePub,getJson,tfetch,PING_MS,corrOf,orgMatch,findDuplicates,instNames,oaShip,orcidExternalIds,ST,matchScore,findDoi,FOUND_OK,oaWork,oaSearchWorks,instRu,loadRef,findJournal,splitEntries,splitSiteEntries,detectSite,isUiLine,parseEntry,titleScore,canonName,leaderVariants,sameSurname,authorPosition,journalVerdict,judgePub,judgeProfileWork,detectLeader,parseAuthorInput,orcidValid,wlAt,passFilter,parseFIO,nameMatch,translitVariants,NET,crWork,findWork,enrichOA,enrichWL,authorInfo,searchAuthors,authorByOrcid,authorByScopus,orcidSearch,runSelfCheck,SELF,authorWorks,cleanOrcid,pingAll};')();
+const A = new Function(src + '\nreturn {loadCs,findCs,csRec,csShort,loadSc,parseCoverage,scAt,findSc,findJournalQuery,journalFacts,titleSim,idFromOrcidItem,collectAuthorIds,parseHirschPage,hirschSummary,findDocRecords,declQuartile,orgHit,leaderByOrg,ocrQuality,isElibList,CACHE,cacheKey,judgePub,getJson,tfetch,PING_MS,corrOf,orgMatch,findDuplicates,instNames,oaShip,orcidExternalIds,ST,matchScore,findDoi,FOUND_OK,oaWork,oaSearchWorks,instRu,loadRef,findJournal,splitEntries,splitSiteEntries,detectSite,isUiLine,parseEntry,titleScore,canonName,leaderVariants,sameSurname,authorPosition,journalVerdict,judgePub,judgeProfileWork,detectLeader,parseAuthorInput,orcidValid,wlAt,passFilter,parseFIO,nameMatch,translitVariants,NET,crWork,findWork,enrichOA,enrichWL,authorInfo,searchAuthors,authorByOrcid,authorByScopus,orcidSearch,runSelfCheck,SELF,authorWorks,cleanOrcid,pingAll};')();
 const DATA = JSON.parse(fs.readFileSync(B + '/data/ref.json', 'utf8'));
 // вымышленные издания для кейсов «квартиль по годам»: история задана за 2021–2025, более ранние годы справочника — пусто
 const fake = (t, issn, h) => DATA.sj.push([t, issn, 0, '', 900000 + DATA.sj.length, ...Array(2 * (DATA.sjYears.length - 5)).fill(null), ...h]);
@@ -607,6 +607,29 @@ eq('транслит / несколько написаний фамилии', A.
     eq('0.8 документ / без публикаций — ничего не найдено', A.findDocRecords([['Отчёт о командировке', 'Поездка прошла в 2024 году успешно.']]).records.length, 0);
     { const r = A.findDocRecords([['References', 'Ivanov I.I., Petrov P.P. Fictional study of sorbents. Journal of Fictional Results. 2019. Vol. 3. P. 1-10.', 'Smirnov A.A. Another fictional study of things in', 'cold water. Fictional Materials Letters. 2021. Vol. 5. P. 20-30.']]);
       eq('0.8 документ / список без номеров: записи по фамилии в начале строки, перенос склеен', [r.records.length, /things in cold water/.test((r.records[1] || {}).text || '')], [2, true]); }
+  }
+  /* ===== 0.9, правка 6: CiteScore Scopus. Вымышленные издания (ISSN 9990…), кроме двух настоящих из файла Elsevier
+     (Journal of Alloys and Compounds — Scopus ID 12325; Hastings Center Report — 13318, ISSN 0093-0334 с ведущим нулём). Ожидания записаны до прогона. ===== */
+  {
+    const S = DATA.cs.subj, si = n => { let k = S.indexOf(n); if (k < 0) { S.push(n); k = S.length - 1; } return k; };
+    DATA.cs.rows.push([99000101, '99900011', 'Fictional Book Series on Sorbents', 1.6, null, 'k', [[si('Aquatic Science'), 36, 3, 123, 194], [si('Oceanography'), 31, 3, 106, 154]]]);
+    DATA.cs.rows.push([99000102, '99900001', '', 7, 1.02, 'j', [[si('Condensed Matter Physics'), 80, 1, 86, 446], [si('Materials Science (all)'), 60, 2, 190, 475]]]);  // Test A: SCImago 2025 — Q3
+    A.loadRef(DATA);
+    const jac = A.findCs([12325], []);
+    eq('0.9 CiteScore / по Scopus ID: CiteScore, наилучшая тематика первой, квартиль по ней', jac && [jac.v, jac.best.name, jac.best.pct, jac.q, jac.best.rank, jac.best.of, jac.subs.length, jac.year], [10.7, 'Mechanical Engineering', 91, 1, 60, 740, 4, 2025]);
+    eq('0.9 CiteScore / ISSN с потерянным в Excel ведущим нулём находится (0093-0334)', (A.findCs([], ['0093-0334']) || {}).sid, 13318);
+    eq('0.9 CiteScore / наилучший квартиль — у тематики с наибольшим процентилем, а не первой в файле', A.findCs([], ['9990-0001']).best.name, 'Condensed Matter Physics');
+    { const j = A.findJournal(['99900001'], 'Test A'), v = A.journalVerdict(j, 2025);
+      eq('0.9 CiteScore / квартили SCImago и CiteScore разные — оба значения, SCImago не подменяется, «проверьте» не ставится', [v.qY, v.cs && v.cs.q, v.notes.some(n => /CiteScore/.test(n))], [3, 1, false]); }
+    { const j = A.findJournal(['99900011'], 'Fictional Book Series on Sorbents'), v = A.journalVerdict(j, 2024);
+      eq('0.9 CiteScore / нет в SCImago, есть CiteScore — «квартиля SCImago нет — есть квартиль по CiteScore 2025 (Q3, сейчас)»', [!!j.sj, v.cs && v.cs.q, v.notes.some(n => /квартиля SCImago нет — есть квартиль по CiteScore 2025 \(Q3, сейчас\)/.test(n))], [false, 3, true]); }
+    { const r = A.judgePub(A.parseEntry('1. Ivanov I.I. Fictional study of alloys for cold climate. Journal of Alloys and Compounds. 2019.'), { doi: '10.5555/f9', title: 'Fictional study of alloys for cold climate', journal: 'Journal of Alloys and Compounds', issns: ['09258388'], year: 2019, type: 'journal-article', via: 'doi', score: 1 }, {});
+      eq('0.9 CiteScore / статья 2019 года: квартиль SCImago — на 2019, CiteScore — 2025 («сейчас»)', [r.jv.sjYear, r.jv.cs && r.jv.cs.year, r.jv.cs && r.jv.cs.q], [2019, 2025, 1]); }
+    eq('0.9 CiteScore / по одному названию без ISSN и Scopus ID — не ищется', A.findJournal([], 'Fictional Book Series on Sorbents').cs, null);
+    eq('0.9 CiteScore / ISSN, общий для нескольких изданий CiteScore, — не выбирается', (() => { DATA.cs.rows.push([99000103, '99900021', 'Fict One', 1, null, 'j', [[0, 10, 4, 9, 10]]], [99000104, '99900021', 'Fict Two', 2, null, 'j', [[0, 90, 1, 1, 10]]]); A.loadRef(DATA); return A.findCs([], ['9990-0021']); })(), null);
+    { const r = A.findJournalQuery('Fictional Book Series on Sorbents'), f = r.sure && A.journalFacts(r.sure.e);
+      eq('0.9 CiteScore / режим «Журнал»: издание только в CiteScore находится по названию, CiteScore и квартиль в сведениях', [!!f, f && f.cs && f.cs.q, f && f.cs && f.cs.v, f && f.notes.some(n => /CiteScore/.test(n))], [true, 3, 1.6, true]); }
+    eq('0.9 CiteScore / короткая запись для таблицы и выгрузки', [A.csShort(jac), A.csShort(null)], ['10,7 Q1', '']);
   }
   console.log(`Пройдено ${pass} из ${pass + fail}`); fails.forEach(f => console.log('  НЕ ПРОЙДЕНО — ' + f)); process.exit(fail ? 1 : 0);
 })();

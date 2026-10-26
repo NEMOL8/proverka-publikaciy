@@ -34,6 +34,13 @@ const AID = { Sokolova: 'A1', Orlov: 'A2', Lebedev: 'A3' }, ANAME = { A1: 'Anna 
   const ash = (p, i) => p[7].map(f => ({ author: { id: 'https://openalex.org/' + AID[f], display_name: ANAME[AID[f]], orcid: null }, is_corresponding: i === 0 && f === 'Sokolova', institutions: INST[i] ? [{ id: 'https://openalex.org/I' + i, display_name: INST[i], country_code: 'RU' }] : [], raw_affiliation_strings: INST[i] ? [INST[i]] : [] }));
   let MODE = 'two'; const orcAuth = [];  // что отвечает поиск авторов OpenAlex по имени
   const OA = (id, name, extra) => Object.assign({ id: 'https://openalex.org/' + id, display_name: name, orcid: null, works_count: 4, summary_stats: { h_index: 3 }, last_known_institutions: [{ display_name: 'Вымышленный университет', country_code: 'RU' }] }, extra || {});
+  // 0.9, правка 3: поля ввода — на главной; на подстранице результата они скрыты. Перед вводом — «← Новый поиск», как сделал бы человек
+  const HOME_SEL = /^#(author|org|ago|anew|list|go|jq|jy|jgo|file|dfile|afile|stop)\b/;
+  const toHome = async sel => { if (typeof sel === 'string' && HOME_SEL.test(sel) && await pg.evaluate(() => document.body.dataset.view !== 'home').catch(() => false)) { await pg.click('#rback'); await pg.waitForFunction(() => document.body.dataset.view === 'home', null, { timeout: 5000 }); } };
+  // так же к таблицам и кнопкам результата — открыть нужную подстраницу (вкладку), как сделал бы человек
+  const VIEW_SEL = [[/^#(outList|retry|xlsx|csv|copy)\b/, 'list'], [/^#(outAuthor|hx|acopy|axlsx|acsv)/, 'author'], [/^#(outJournal|jcopy|jxlsx|jcsv)\b/, 'journals']];
+  const toView = async sel => { const m = typeof sel === 'string' && VIEW_SEL.find(([re]) => re.test(sel)); if (!m) return toHome(sel); if (await pg.evaluate(v => document.body.dataset.view !== v && viewHas(v), m[1]).catch(() => false)) { await pg.evaluate(v => setView(v), m[1]); } };
+  for (const m of ['fill', 'click', 'press', 'setInputFiles', 'focus', 'check', 'uncheck']) { const f = pg[m].bind(pg); pg[m] = async (sel, ...a) => { await toView(sel); return f(sel, ...a); }; }
   const mock = async () => {
     await pg.route(/pub\.orcid\.org/, route => { const u = decodeURIComponent(route.request().url()); hits.push(u); orcAuth.push(route.request().headers()['authorization'] || '');
       if (/\/v3\.0\/0000-0002-1825-0097\/external-identifiers/.test(u)) return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ 'external-identifier': [{ 'external-id-type': 'Scopus Author ID', 'external-id-value': '57000000000' }, { 'external-id-type': 'ResearcherID', 'external-id-value': 'AAA-1234-2020' }] }) }); const one = { 'orcid-id': '0000-0002-1825-0097', 'given-names': 'Anna', 'family-names': 'Sokolova', 'institution-name': ['Вымышленный университет'] };
@@ -107,6 +114,15 @@ const AID = { Sokolova: 'A1', Orlov: 'A2', Lebedev: 'A3' }, ANAME = { A1: 'Anna 
   await pg.evaluate(() => { setFlt('list', 'q', 'none', true); }); sl = await shownList(); T('список: БС 1 или без квартиля — № 1, 2, 3, 4, 5', sl.join() === '1,2,3,4,5', sl);
   const cnt = await pg.evaluate(() => document.querySelector('#outList .cnt').innerText); T('список: счётчик «показано 5 из 6»', /5\s+из 6/.test(cnt), cnt);
   await pg.evaluate(() => resetFlt('list')); sl = await shownList(); T('список: сброс фильтра — все 6', sl.length === 6, sl);
+  // 0.9, правка 4: кнопки-наборы (ожидания: «Q1–Q2 или БС 1» — № 1, 2, 3, как при ручной отметке Q1, Q2 и БС 1; повторное нажатие снимает; годы не трогаются)
+  { const man = await pg.evaluate(() => { setFlt('list', 'q', '1', true); setFlt('list', 'q', '2', true); setFlt('list', 'wl', '1', true); const r = listRows().map(x => x.i + 1).join(); const on = [...document.querySelectorAll('#outList button.preset')].map(b => b.classList.contains('on')); resetFlt('list'); return { r, on }; });
+    await pg.evaluate(() => { FLT.list.yFrom = 2019; setPreset('list', 'q12'); }); const pr = await pg.evaluate(() => ({ r: listRows().map(x => x.i + 1).join(), q: FLT.list.q.slice().sort().join(), wl: FLT.list.wl.join(), y: FLT.list.yFrom, on: [...document.querySelectorAll('#outList button.preset')].map(b => b.classList.contains('on')) }));
+    await pg.evaluate(() => setPreset('list', 'q12')); const off = await pg.evaluate(() => ({ q: FLT.list.q.length, wl: FLT.list.wl.length, y: FLT.list.yFrom }));
+    T('0.9 наборы: «Q1–Q2 или БС 1» = ручная отметка; подсвечен и при ручной отметке; годы не тронуты; повторное нажатие снимает', man.r === '1,2,3' && man.on.join() === 'true,false' && pr.r === man.r && pr.q === '1,2' && pr.wl === '1' && pr.y === 2019 && pr.on.join() === 'true,false' && off.q === 0 && off.wl === 0 && off.y === 2019, { man, pr, off });
+    await pg.evaluate(() => { setPreset('list', 'q1'); }); const q1 = await pg.evaluate(() => [FLT.list.q.join(), FLT.list.wl.join()].join('|')); T('0.9 наборы: «Q1 или БС 1» — Q1 и уровень 1', q1, '1|1'); await pg.evaluate(() => resetFlt('list')); }
+  // 0.9, правка 6: CiteScore в таблице списка — отдельный столбец, ссылка на Scopus, подпись Elsevier в подсказке; квартиль SCImago подписан годом
+  { const c = await pg.evaluate(() => { const tr = document.querySelectorAll('#outList table.t tr')[1]; const a = tr.children[6].querySelector('a.csv'); return { a: a ? [a.textContent, a.href, a.title] : null, q: tr.children[3].textContent }; });
+    T('0.9 список: Nature — CiteScore «… Q1» со ссылкой на scopus.com/sourceid/21206 и подписью Elsevier; квартиль «Q1 в 2023», «сейчас (2025)»', !!c.a && /Q1$/.test(c.a[0]) && /sourceid\/21206$/.test(c.a[1]) && /© Elsevier B\.V\./.test(c.a[2]) && /Q1\s*в 2023/.test(c.q) && /сейчас \(2025\)/.test(c.q), c); }
   await pg.evaluate(() => { setFlt('au', 'q', '1', true); setFlt('au', 'wl', '1', true); }); T('автор: Q1 или БС 1 — 3 статьи из 4', await auRows() === 3, await auRows()); await pg.evaluate(() => resetFlt('au'));
   // 0.7.9: издание не в SCImago — индексация по Белому списку и ссылки, где посмотреть квартиль самому; полей для ручного ввода нет (ожидания записаны до прогона)
   { const c5 = await pg.evaluate(() => document.querySelectorAll('#outList table.t tr')[5].children[3].innerText);
@@ -116,21 +132,21 @@ const AID = { Sokolova: 'A1', Orlov: 'A2', Lebedev: 'A3' }, ANAME = { A1: 'Anna 
     T('индексация по Белому списку у издания: WoS CC · Scopus · RSCI', /индексация: WoS CC (✓|—) · Scopus (✓|—) · RSCI (✓|—)/.test(c5i), c5i);
     T('издания нет в Белом списке: «индексация: нет данных»', /индексация: нет данных/.test(c4), c4);
     const inp = await pg.evaluate(() => document.querySelectorAll('#outList input[type=text], #outAuthor .plinks input').length); T('в таблицах нет полей для ручного ввода', inp === 0, inp);
-    const h1 = await pg.evaluate(() => [...document.querySelectorAll('#outList table.t tr')[0].children].map(x => x.innerText.replace(/\s+/g, ' ')).join('|'));
-    T('колонка называется «Импакт-фактор», с подписью SCImago', /Импакт-фактор SCImago, цит\. на документ за 2 года/.test(h1) && !/Показатель/.test(h1), h1);
+    const h1 = await pg.evaluate(() => [...document.querySelectorAll('#outList table.t tr')[0].children].map(x => x.textContent.replace(/\s+/g, ' ')).join('|'));  // textContent: заголовки показываются заглавными (0.9)
+    T('колонка называется «Импакт-фактор», с подписью SCImago', /Импакт-фактор\s*SCImago, цит\. на документ за 2 года/.test(h1) && !/Показатель/.test(h1), h1);
     const nl = await pg.evaluate(() => document.querySelectorAll('#outList table.t tr')[3].children[3].innerText);
     T('ссылка на издание в Scopus у изданий из SCImago', await pg.evaluate(() => [...document.querySelectorAll('#outList table.t tr')[1].children[3].querySelectorAll('a')].some(a => /scopus\.com\/sourceid\/\d+/.test(a.href))), nl); }
   // 2а. corresponding и ссылки
-  const corr = await pg.evaluate(() => [...document.querySelectorAll('#outList table.t tr')].slice(1, 3).map(tr => tr.children[6].innerText.split('\n')[0]));
+  const corr = await pg.evaluate(() => [...document.querySelectorAll('#outList table.t tr')].slice(1, 3).map(tr => tr.children[7].innerText.split('\n')[0]));
   T('авторы: первой строкой — крупная пометка «Corresponding — да» / «в базе не указан»', /Corresponding — да/.test(corr[0]) && /Corresponding — в базе не указан/.test(corr[1]), corr);
-  const last = await pg.evaluate(() => document.querySelectorAll('#outList table.t tr')[2].children[6].innerText); T('справочно показан последний автор', /последний:\s*X\. Lebedev/.test(last), last);
+  const last = await pg.evaluate(() => document.querySelectorAll('#outList table.t tr')[2].children[7].innerText); T('справочно показан последний автор', /последний:\s*X\. Lebedev/.test(last), last);
   const dl = await pg.evaluate(() => [...document.querySelectorAll('#outList table.t tr')].slice(1, 6).map(tr => [...tr.children[1].querySelectorAll('a')].some(a => a.href === 'https://doi.org/' + a.textContent.trim())));
   T('DOI под статьёй — ссылка', dl.every(Boolean), dl);
   const rec = await pg.evaluate(() => [...document.querySelectorAll('#outList table.t tr')].slice(1, 6).map(tr => !!tr.children[1].querySelector('details.mini') && !/совпадение названия/.test(tr.children[1].innerText)));
   T('запись из списка свёрнута, процента совпадения нет', rec.every(Boolean), rec);
   const wlTxt = await pg.evaluate(() => document.querySelectorAll('#outList table.t tr')[5].children[4].innerText); T('ЖТФ 2024: уровень 2 (2023) и «сейчас уровень 1»', /уровень 2/.test(wlTxt) && /сейчас уровень 1/.test(wlTxt), wlTxt);
   // ===== 0.7: corresponding, фильтры, организация, дубли (ожидания записаны до прогона) =====
-  const c07 = await pg.evaluate(() => [...document.querySelectorAll('#outList table.t tr')].slice(1, 3).map(tr => tr.children[6].innerText));
+  const c07 = await pg.evaluate(() => [...document.querySelectorAll('#outList table.t tr')].slice(1, 3).map(tr => tr.children[7].innerText));
   T('0.7 список: у найденного автора — «Corresponding — да» (Nature) и «в базе не указан» (PRB), имя автора под пометкой', /Corresponding — да\s*\n\s*Anna V\. Sokolova/.test(c07[0]) && /Corresponding — в базе не указан/.test(c07[1]), c07);
   const corrCol = await pg.evaluate(() => [...document.querySelectorAll('#outAuthor table.t')].pop().rows[0].innerText);
   // 0.7.11, правка 3: столбец «Организация (сверка)» убран — ожидания записаны до прогона
@@ -140,12 +156,13 @@ const AID = { Sokolova: 'A1', Orlov: 'A2', Lebedev: 'A3' }, ANAME = { A1: 'Anna 
   await pg.evaluate(() => setFltY('list', 'ifFrom', '20')); sl = await shownList(); const cnt20 = await pg.evaluate(() => document.querySelector('#outList .cnt').innerText);
   T('0.7 список: показатель от 20 — только Nature (№ 1), ненайденные по SCImago скрыты и посчитаны', sl.join() === '1' && /скрыто\s*\d/.test(cnt20), [sl, cnt20]); await pg.evaluate(() => resetFlt('list'));
   // 0.7.11, правка 1 и 3: поле организации открыто в блоке «Автор»; сверки по статьям и фильтра «Организация» нет (ожидания записаны до прогона)
+  await toHome('#org');
   const orgVis = await pg.evaluate(() => { const o = document.getElementById('org'); return [!!o.offsetParent, !o.closest('details'), /однофамильцев/.test(document.querySelector('label[for=org]').innerText)]; });
   T('0.7.11 поле «Организация автора (чтобы отличить однофамильцев)» открыто рядом с ФИО', orgVis.every(Boolean), orgVis);
   await pg.fill('#org', 'Test University'); await pg.dispatchEvent('#org', 'change');
-  const fOrg = await pg.evaluate(() => [...document.querySelectorAll('.fbar .gl')].map(x => x.innerText).join('|'));
+  const fOrg = await pg.evaluate(() => [...document.querySelectorAll('.fbar .gl')].map(x => x.textContent).join('|'));
   T('0.7.11 фильтра «Организация» нет ни над одной таблицей', !/Организация/i.test(fOrg), fOrg);
-  const orgCell = await pg.evaluate(() => document.querySelectorAll('#outList table.t tr')[1].children[6].innerText); T('0.7.11 список: организация автора — фактом, без пометки сверки', /Test University/.test(orgCell) && !/совпадает|не уверена|другая организация/.test(orgCell), orgCell);
+  const orgCell = await pg.evaluate(() => document.querySelectorAll('#outList table.t tr')[1].children[7].innerText); T('0.7.11 список: организация автора — фактом, без пометки сверки', /Test University/.test(orgCell) && !/совпадает|не уверена|другая организация/.test(orgCell), orgCell);
   await pg.fill('#org', ''); await pg.dispatchEvent('#org', 'change');
   // 4. автор по строке идентификаторов (ORCID)
   await pg.fill('#author', 'AAA-1234-2020/57000000000/0000-0002-1825-0097'); await pg.click('#ago'); await idle(); a = await auState();
@@ -231,7 +248,7 @@ const AID = { Sokolova: 'A1', Orlov: 'A2', Lebedev: 'A3' }, ANAME = { A1: 'Anna 
   await pg.goto(URL0); MODE = 'none';
   await pg.fill('#list', PUBS.slice(0, 3).map((p, i) => `${i + 1}. ${p[0]} ${p[1]}. ${p[2]}. ${p[3]}.`).join('\n') + `\n4. ${PUBS[0][0]} ${PUBS[0][1]}. ${PUBS[0][2]}. ${PUBS[0][3]}, vol. 615.`);
   await pg.click('#go'); await pg.waitForFunction(() => /Готово|неполный/.test(document.getElementById('status').textContent) && !BUSY, null, { timeout: 60000 });
-  const dup = await pg.evaluate(() => ({ d: W.dups.map(d => [d.a, d.b, d.why]), note: document.querySelectorAll('#outList table.t tr')[4].children[7].innerText }));
+  const dup = await pg.evaluate(() => ({ d: W.dups.map(d => [d.a, d.b, d.why]), note: document.querySelectorAll('#outList table.t tr')[4].children[8].innerText }));
   T('0.7 дубли: запись № 4 повторяет № 1 — одна пара, пометка у записи', dup.d.length === 1 && dup.d[0][0] === 0 && dup.d[0][1] === 3 && /дубль записи № 1/.test(dup.note), dup);
   // 0.7.9: ненайденная статья — ближайшие варианты «Это она» и ссылки поиска; выбор варианта (ожидания записаны до прогона)
   await pg.fill('#list', PUBS.map((p, i) => `${i + 1}. ${p[0]} ${p[1]}. ${p[2]}. ${p[3]}. ${p[4]}`).join('\n')); await pg.click('#go'); await pg.waitForFunction(() => /Готово|неполный/.test(document.getElementById('status').textContent) && !BUSY, null, { timeout: 60000 });
@@ -242,14 +259,25 @@ const AID = { Sokolova: 'A1', Orlov: 'A2', Lebedev: 'A3' }, ANAME = { A1: 'Anna 
   // 0.7.10, правка 3: раздела «Несколько авторов» на странице больше нет (ожидания записаны до прогона)
   { const g = await pg.evaluate(() => ({ el: ['grp', 'ggo', 'gcopy', 'gfile', 'outGroup'].filter(id => document.getElementById(id)), fn: ['runGroup', 'renderGroup', 'copyGroup'].filter(n => typeof window[n] === 'function'), h2: [...document.querySelectorAll('h2')].map(h => h.textContent.trim()) }));
     T('0.7.10 / раздел «Несколько авторов» убран целиком', g.el.length === 0 && g.fn.length === 0 && !g.h2.some(t => /Несколько авторов/i.test(t)), g); }
-  // 0.7.10, правка 1: строка переходов со счётчиками и переход к результату
-  { const nav = await pg.evaluate(() => { const n = document.getElementById('nav'); return { show: n && getComputedStyle(n).display !== 'none', items: [...n.querySelectorAll('a')].map(a => a.textContent.trim()), toinp: !!document.getElementById('toinp') }; });
-    T('0.7.10 / строка переходов: пункты «Ввод» и «Публикации из списка» со счётчиком, кнопка «К вводу» есть', nav.show && nav.items.length >= 2 && /Ввод/.test(nav.items[0]) && /Публикации из списка\s*6/.test(nav.items[1]) && nav.toinp, nav); }
+  // 0.9, правки 1 и 3 (вместо строки переходов 0.7.10): результат — на подстранице; вкладки в порядке Автор · Журналы · Публикации;
+  // «← Новый поиск» — к вводу, введённое сохраняется; «Назад» браузера возвращает на подстраницу. Ожидания записаны до прогона.
+  { await pg.evaluate(() => goTo('outList'));
+    const v1 = await pg.evaluate(() => ({ view: document.body.dataset.view, hash: location.hash, tabs: [...document.querySelectorAll('#tabs a')].map(a => a.textContent.trim()), on: (document.querySelector('#tabs a.on') || {}).textContent, back: !!document.getElementById('rback') && getComputedStyle(document.getElementById('rback')).display !== 'none', homeHidden: !document.getElementById('list').offsetParent, acts: getComputedStyle(document.getElementById('listOut')).display !== 'none' && getComputedStyle(document.getElementById('auOut')).display === 'none' }));
+    T('0.9 / подстраница «Публикации»: адрес #list, вкладки «Автор» и «Публикации 6» (автор первым), кнопка «← Новый поиск», ввод скрыт, кнопки выгрузки — только для списка', v1.view === 'list' && v1.hash === '#list' && /^Автор/.test(v1.tabs[0]) && /Публикации\s*6/.test(v1.tabs[v1.tabs.length - 1]) && /Публикации/.test(v1.on) && v1.back && v1.homeHidden && v1.acts, v1);
+    const listVal = await pg.inputValue('#list').catch(() => null);
+    await pg.click('#rback'); await pg.waitForFunction(() => document.body.dataset.view === 'home', null, { timeout: 5000 }).catch(() => { });
+    const v2 = await pg.evaluate(() => ({ view: document.body.dataset.view, listVis: !!document.getElementById('list').offsetParent, kept: document.getElementById('list').value.length }));
+    T('0.9 / «← Новый поиск»: главная, поле списка видно, введённое сохранилось', v2.view === 'home' && v2.listVis && v2.kept > 50, [v2, listVal && listVal.length]);
+    await pg.goBack(); await pg.waitForFunction(() => document.body.dataset.view === 'list', null, { timeout: 5000 }).catch(() => { });
+    T('0.9 / кнопка «Назад» браузера — снова подстраница «Публикации»', await pg.evaluate(() => document.body.dataset.view), 'list');
+    await pg.click('#tabs a[href="#author"]'); await pg.waitForFunction(() => document.body.dataset.view === 'author', null, { timeout: 5000 }).catch(() => { });
+    await pg.screenshot({ path: B + '/evals/shot_author.png', fullPage: true });
+    T('0.9 / вкладка «Автор» открывает подстраницу автора', await pg.evaluate(() => [document.body.dataset.view, !!document.getElementById('outAuthor').offsetParent].join()), 'author,true'); }
   // 0.7.10, правка 4: «Найти другого автора» чистит автора, но не список публикаций
   await pg.fill('#author', '0000-0002-1825-0097'); await pg.click('#ago'); await idle();
   { const before = await pg.evaluate(() => ({ au: !!document.getElementById('outAuthor').innerHTML.trim(), list: W.pubs.length }));
     await pg.click('#anew'); await idle();
-    const after = await pg.evaluate(() => ({ au: !!document.getElementById('outAuthor').innerHTML.trim(), field: document.getElementById('author').value, list: W.pubs.length, prof: !!AU.prof, nav: [...document.querySelectorAll('#nav a')].map(a => a.textContent.trim()) }));
+    const after = await pg.evaluate(() => ({ au: !!document.getElementById('outAuthor').innerHTML.trim(), field: document.getElementById('author').value, list: W.pubs.length, prof: !!AU.prof, nav: [...document.querySelectorAll('#tabs a')].map(a => a.textContent.trim()) }));
     T('0.7.10 / «Найти другого автора»: автор и поле очищены, список публикаций остался', before.au && before.list === 6 && !after.au && after.field === '' && !after.prof && after.list === 6 && !after.nav.some(t => /^Автор/.test(t)), [before, after]); }
 
   // ===== 0.7.11: удобство 1–11 и правки 1, 4 (ожидания записаны до прогона) =====
@@ -287,7 +315,7 @@ const AID = { Sokolova: 'A1', Orlov: 'A2', Lebedev: 'A3' }, ANAME = { A1: 'Anna 
     T('0.7.11 кеш: повторная проверка того же списка — 0 запросов к Crossref и OpenAlex, в строке состояния «Из кеша браузера»', net2 === 0 && /Из кеша браузера/.test(cs), [net2, cs]);
     await pg.evaluate(async () => { document.getElementById('useCache').checked = false; await cacheClear(); await cacheInfo(); }); }
   // 11. причина пометки «проверьте» — короткой фразой в строке
-  { const r = await pg.evaluate(() => { const i = W.pubs.findIndex(p => p.notes.length); return i < 0 ? '' : document.querySelectorAll('#outList table.t tr')[i + 1].children[7].innerText; });
+  { const r = await pg.evaluate(() => { const i = W.pubs.findIndex(p => p.notes.length); return i < 0 ? '' : document.querySelectorAll('#outList table.t tr')[i + 1].children[8].innerText; });
     T('0.7.11 примечания: короткие фразы в строке', r.length > 0 && r.split('\n')[0].length <= 70, r); }
   // 8. Ctrl+Enter в поле списка
   { await pg.fill('#list', '1. Sokolova A.V., Orlov D.K. Alginate sorbents for oil spill response in cold seawater. 2023. Nature.'); await pg.focus('#list'); await pg.keyboard.press('Control+Enter'); await idle(); await pg.waitForFunction(() => /Готово/.test(document.getElementById('status').textContent));
@@ -372,10 +400,23 @@ const AID = { Sokolova: 'A1', Orlov: 'A2', Lebedev: 'A3' }, ANAME = { A1: 'Anna 
     await pg.click('#anew'); T('0.8 правка 4: «Найти другого автора» убирает вставленные значения', await pg.evaluate(() => AU.hx.length === 0 && !document.querySelector('.hplate')), ''); }
   // правка 5: режим «Журнал» («Physical Review» с 0.8.1 однозначен — в списке Scopus есть журнал с таким названием, поэтому похожие — «Mater. Lett.»)
   { await pg.fill('#jq', 'Nature\n0028-0836\nMater. Lett.\nЖурнал вымышленных результатов несуществующих наук'); await pg.fill('#jy', '2023'); await pg.click('#jgo'); await pg.waitForFunction(() => /Готово/.test(document.getElementById('jstatus').textContent));
-    const j = await pg.evaluate(() => { const tr = [...document.querySelectorAll('#outJournal table.t tr')].slice(1).map(r => r.innerText); return { tr, nav: document.getElementById('nav').innerText, st: document.getElementById('jstatus').textContent }; });
-    T('0.8 правка 5: журналы — Nature по названию и по ISSN (Q1 на 2023, импакт-фактор, Белый список), похожие — выбор, вымышленный — «не найдено в справочниках»', j.tr.length === 4 && /Q1/.test(j.tr[0]) && /на 2023/.test(j.tr[0]) && /уровень 1/.test(j.tr[0]) && /Q1/.test(j.tr[1]) && /выберите/.test(j.tr[2]) && /не найдено в справочниках/.test(j.tr[3]) && /Журналы\s*4/.test(j.nav), j);
-    await pg.click('#outJournal button:has-text("Это он")'); const p3 = await pg.evaluate(() => document.querySelectorAll('#outJournal table.t tr')[3].innerText);
+    // 0.9: журнал — строка-ведомость (.jsheet) вместо строки таблицы; текст берётся textContent (подписи показываются заглавными)
+    const j = await pg.evaluate(() => { const tr = [...document.querySelectorAll('#outJournal .jsheet')].map(r => r.textContent); return { tr, nav: document.getElementById('tabs').textContent, st: document.getElementById('jstatus').textContent, view: document.body.dataset.view }; });
+    T('0.8 правка 5: журналы — Nature по названию и по ISSN (Q1 на 2023, импакт-фактор, Белый список), похожие — выбор, вымышленный — «не найдено в справочниках»', j.tr.length === 4 && /Q1/.test(j.tr[0]) && /Квартиль SCImago 2023/.test(j.tr[0]) && /уровень/.test(j.tr[0]) && /Q1/.test(j.tr[1]) && /выберите/.test(j.tr[2]) && /не найдено в справочниках/.test(j.tr[3]) && /Журналы\s*4/.test(j.nav) && j.view === 'journals', j);
+    // 0.9, правка 6: CiteScore у журнала — значение и квартиль, ссылка на страницу издания в Scopus, подпись Elsevier в подсказке (ожидания записаны до прогона: Nature — Scopus ID 21206)
+    { const c = await pg.evaluate(() => { const a = document.querySelector('#outJournal .jsheet .cs a.csv'); return a ? { t: a.textContent, href: a.href, tip: a.title, line: a.closest('.cs').textContent } : null; });
+      T('0.9 CiteScore у журнала: «CiteScore 2025», число и квартиль, ссылка scopus.com/sourceid/21206, в подсказке «© Elsevier B.V.»', !!c && /^\d+(,\d)? Q[1-4]$/.test(c.t) && /scopus\.com\/sourceid\/21206$/.test(c.href) && /Scopus CiteScore 2025, © Elsevier B\.V\./.test(c.tip) && /CiteScore 2025/.test(c.line) && /процентиль/.test(c.line), c); }
+    await pg.click('#outJournal button:has-text("Это он")'); const p3 = await pg.evaluate(() => document.querySelectorAll('#outJournal .jsheet')[2].textContent);
     T('0.8 правка 5: «Это он» — выбранный журнал показан с квартилем и пометкой о неполном совпадении', /Materials Letters/.test(p3) && /Q\d/.test(p3) && /совпало не полностью/.test(p3), p3);
+    // 0.9, правка 2: подсказки при вводе журнала (ожидания записаны до прогона)
+    const sug = async q => { await pg.fill('#jq', ''); await pg.focus('#jq'); await pg.keyboard.type(q); await pg.waitForTimeout(400); return pg.evaluate(() => ({ vis: getComputedStyle(document.getElementById('jsug')).display !== 'none', items: [...document.querySelectorAll('#jsug .it')].map(d => d.textContent), none: (document.querySelector('#jsug .none') || {}).textContent || '' })); };
+    let sg = await sug('journal of alloys');
+    T('0.9 подсказки: начало названия — Journal of Alloys and Compounds с ISSN 0925-8388 и пометками', sg.vis && sg.items.some(t => /^Journal of Alloys and Compounds/.test(t) && /0925-8388/.test(t) && /SCImago Q1/.test(t) && /Scopus/.test(t)), sg);
+    sg = await sug('alloys and comp'); T('0.9 подсказки: начало слова в середине названия — тоже находится', sg.items.some(t => /Journal of Alloys and Compounds/.test(t)), sg.items.slice(0, 3));
+    sg = await sug('журнал технич'); T('0.9 подсказки: кириллица — Журнал технической физики', sg.items.some(t => /ЖУРНАЛ ТЕХНИЧЕСКОЙ ФИЗИКИ/i.test(t)), sg.items.slice(0, 3));
+    sg = await sug('zzqxv'); T('0.9 подсказки: ничего не найдено — пояснение, поиск всё равно возможен', sg.vis && !sg.items.length && /нет названий/.test(sg.none), sg);
+    sg = await sug('journal of alloys'); const first = sg.items[0] || ''; await pg.keyboard.press('ArrowDown'); await pg.keyboard.press('Enter');
+    const jv = await pg.inputValue('#jq'); T('0.9 подсказки: стрелка вниз и Enter — в строку подставлены название и ISSN первого варианта, список закрыт', jv.trim() === first.replace(/ISSN (\d{4}-\d{3}[\dX]).*$/, '').trim() + ' ' + (first.match(/ISSN (\d{4}-\d{3}[\dX])/) || [])[1] && await pg.evaluate(() => getComputedStyle(document.getElementById('jsug')).display === 'none'), [jv, first]);
     const [dl] = await Promise.all([pg.waitForEvent('download'), pg.click('#jxlsx')]); T('0.8 правка 5: «Скачать Excel» для журналов', /^Журналы_.*\.xlsx$/.test(dl.suggestedFilename()), dl.suggestedFilename()); }
   // правка 6: документы — PDF с текстом (список в конце), PDF с таблицей, Word, скан
   { const pd = await br.newPage(); const fio = PUBS.slice(0, 3);
