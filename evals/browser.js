@@ -75,13 +75,17 @@ const AID = { Sokolova: 'A1', Orlov: 'A2', Lebedev: 'A3' }, ANAME = { A1: 'Anna 
     });
   };
   await mock();
-  // CI: тот же автономный HTML по localhost, поскольку новые Chromium ограничивают localStorage для file://.
-  // Без PC_TEST_HTTP прежний штатный file:// сценарий не меняется.
+  // CI: основной набор по HTTP на настоящих файлах сайта; избегаем повторной загрузки HTML со встроенными OCR-моделями.
+  // По умолчанию сохраняется исходный file:// тест автономной HTML-версии.
   const oneFile = fs.readdirSync(B + '/dist').filter(f => f.endsWith('.html'))[0];
-  const singleSrv = process.env.PC_TEST_HTTP === '1' ? require('http').createServer((req, res) => {
-    if (req.url.split('?')[0] !== '/') { res.writeHead(404); return res.end(); }
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-    fs.createReadStream(B + '/dist/' + oneFile).pipe(res);
+  const siteRoot = path.resolve(B, 'dist/site');
+  const singleSrv = process.env.PC_TEST_SITE === '1' ? require('http').createServer((req, res) => {
+    const pathname = decodeURIComponent(new URL(req.url, 'http://localhost/').pathname);
+    const fp = path.resolve(siteRoot, '.' + (pathname === '/' ? '/index.html' : pathname));
+    if (!fp.startsWith(siteRoot + path.sep) || !fs.existsSync(fp) || !fs.statSync(fp).isFile()) { res.writeHead(404); return res.end(); }
+    const ext = path.extname(fp), mime = {'.html':'text/html; charset=utf-8','.js':'text/javascript','.json':'application/json','.gz':'application/gzip','.woff2':'font/woff2','.wasm':'application/wasm','.txt':'text/plain'}[ext] || 'application/octet-stream';
+    res.writeHead(200, { 'Content-Type': mime });
+    fs.createReadStream(fp).pipe(res);
   }) : null;
   if (singleSrv) await new Promise(ok => singleSrv.listen(8766, '127.0.0.1', ok));
   const URL0 = singleSrv ? 'http://127.0.0.1:8766/' : 'file://' + B + '/dist/' + encodeURIComponent(oneFile);
