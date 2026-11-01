@@ -23,6 +23,8 @@ jobs:
           python-version: '3.11'
       - name: Dependencies
         run: npm ci
+      - name: Test document dependencies
+        run: python -m pip install python-docx
       - name: Build
         run: python build.py
       - name: Logic tests
