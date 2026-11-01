@@ -1,0 +1,42 @@
+name: Проверка публикаций — тесты
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Dependencies
+        run: npm ci
+      - name: Build
+        run: python build.py
+      - name: Logic tests
+        run: node evals/run.js
+      - name: Install test browser
+        run: npx playwright install --with-deps chromium
+      - name: Browser tests
+        env:
+          LANG: C.UTF-8
+        run: node evals/browser.js
+      - name: Upload test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-evals
+          path: evals/out.*
+          if-no-files-found: ignore
