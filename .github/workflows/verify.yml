@@ -34,7 +34,7 @@ jobs:
       - name: Browser tests
         env:
           LANG: C.UTF-8
-          PC_TEST_HTTP: '1'
+          PC_TEST_SITE: '1'
         run: node evals/browser.js
       - name: Upload test output
         if: always()
