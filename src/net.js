@@ -198,15 +198,20 @@ async function authorWorks(who, yearFrom) {
   if (NET.useOA) {
     try {
       let cursor = '*', n = 0;
-      while (cursor && n < 10) {
+      while (cursor && n < 20) {
         const f = who.ids && who.ids.length ? 'author.id:' + who.ids.join('|') : 'author.orcid:' + orcid;
-        const j = await getJson(`${NET.openalex}/works?filter=${f},type:article|review&sort=publication_year:desc&per-page=200&cursor=${encodeURIComponent(cursor)}&select=id,doi,title,publication_year,type,primary_location,authorships${oaParam()}`, 1);
+        const j = await getJson(`${NET.openalex}/works?filter=${f},type:article|review&sort=publication_year:desc&per-page=100&cursor=${encodeURIComponent(cursor)}&select=id,doi,title,publication_year,type,primary_location,authorships${oaParam()}`, 1);
         if (!j) break;
         for (const w of j.results || []) { const s = w.primary_location && w.primary_location.source; out.works.push({ oaId: w.id ? String(w.id).split('/').pop() : '', doi: (w.doi || '').replace(/^https?:\/\/doi\.org\//, '').toLowerCase(), title: w.title || '', year: w.publication_year, type: w.type, journal: s ? s.display_name : '', issns: s && s.issn ? s.issn : [], srcType: s ? s.type : '', authors: (w.authorships || []).map(oaShip) }); }
         cursor = j.meta && j.meta.next_cursor && (j.results || []).length ? j.meta.next_cursor : null; n++;
       }
-      out.capped = !!cursor; out.source = 'OpenAlex'; return out;
-    } catch (e) { out.err = 'OpenAlex: ' + e.message; out.works = []; }
+      out.capped = !!cursor; out.partial = out.capped; if (out.capped) out.err = 'OpenAlex: достигнут предел 2000 записей; поиск неполный'; out.source = 'OpenAlex'; return out;
+    } catch (e) {
+      out.err = 'OpenAlex: ' + e.message;
+      // Не теряем уже найденные записи, когда следующая страница не загрузилась.
+      // Возвращаем частичный список только с явным предупреждением о неполноте.
+      if (out.works.length) { out.source = 'OpenAlex'; out.partial = true; return out; }
+    }
   }
   if (!orcid) { const er = new Error(out.err || 'OpenAlex выключен, а без ORCID профиль взять негде'); throw er; }
   const j = await getJson(`${NET.crossref}/works?filter=orcid:${orcid},type:journal-article&rows=1000&select=${CR_SELECT}`);

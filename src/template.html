@@ -191,7 +191,7 @@ tr.done>td{background:#f1f8f1}td .mk{display:block;margin-top:4px;font-size:11.5
   a{color:#000;text-decoration:none}.scroll{overflow:visible}h2{margin:10px 0 4px}.view{display:none}body[data-view=author] #vAuthor,body[data-view=journals] #vJournal,body[data-view=list] #vList{display:block}}
 </style></head><body data-view="home">
 <header class="top"><svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7.5" fill="none" stroke="#fff" stroke-width="1.4"/><ellipse cx="12" cy="12" rx="11" ry="4.2" fill="none" stroke="#E44145" stroke-width="1.4" transform="rotate(-25 12 12)"/></svg>
-<div><h1>Публикации: квартиль, Белый список, импакт-фактор, авторы</h1>
+<div><h1>Публикации: квартиль, Белый список, цитируемость, авторы</h1>
 <div class="dim"><span id="ver"></span>. <span id="refinfo"></span></div></div></header>
 <div class="band"></div>
 <div id="rbar" class="noprint"><a class="back" id="rback" href="#">← Новый поиск</a><nav id="tabs"></nav>
@@ -208,7 +208,7 @@ tr.done>td{background:#f1f8f1}td .mk{display:block;margin-top:4px;font-size:11.5
 <details><summary>Как пользоваться</summary>
 <ol>
 <li><b>Автор</b> (раздел 01): ФИО кириллицей или латиницей, ORCID, Scopus ID, ResearcherID или строка идентификаторов целиком. Организация рядом помогает отличить однофамильцев: если по ней совпал ровно один человек с полным именем — он выбирается сам. Покажутся индекс Хирша, ссылки на все профили автора и все его публикации. Если по ФИО найдено несколько человек — выберите нужного кнопкой «Это он». Кнопка «Найти другого автора» очищает поле и результат, список публикаций остаётся.</li>
-<li><b>Журнал</b> (раздел 02): название или ISSN, по одному в строке — квартиль SCImago, импакт-фактор, уровень Белого списка, CiteScore Scopus и индексация, сейчас и по годам. При вводе названия под полем появляются подходящие журналы — выбор мышью или стрелками и Enter.</li>
+<li><b>Журнал</b> (раздел 02): название или ISSN, по одному в строке — квартиль SCImago, цитирования на документ (2 года), уровень Белого списка, CiteScore Scopus и индексация, сейчас и по годам. При вводе названия под полем появляются подходящие журналы — выбор мышью или стрелками и Enter.</li>
 <li><b>Публикации</b> (раздел 03): вставьте снимок списка (Ctrl+V) или текст и нажмите «Найти публикации». Сверьте распознанный текст со снимком. По каждой статье — квартиль SCImago и уровень Белого списка на год публикации (и сейчас, если отличается), импакт-фактор, CiteScore Scopus, авторы и corresponding author, ссылки. Если утилита сомневается, какая это статья, — покажет варианты с кнопкой «Это она».</li>
 <li>При открытии — начальный экран «Что проверяем»: три кнопки (Автор, Журнал, Публикации; или Alt+1, Alt+2, Alt+3), под ними — только выбранный раздел. Введённое при переключении сохраняется; точка у кнопки — в разделе уже что-то введено. Снимок (Ctrl+V) или перетащенный документ сами открывают «Публикации».</li>
 <li>Результат открывается на отдельной подстранице: вверху «← Новый поиск» (введённое в поля сохраняется), вкладки «Автор · Журналы · Публикации» и кнопки «Скопировать · Excel · CSV · Печать». Кнопки «Назад» и «Вперёд» браузера тоже работают.</li>
@@ -217,7 +217,7 @@ tr.done>td{background:#f1f8f1}td .mk{display:block;margin-top:4px;font-size:11.5
 <li>Фильтры над таблицами: квартиль и уровень Белого списка объединяются через «или», остальные условия — через «и». Кнопки «Q1–Q2 или БС 1» и «Q1 или БС 1» выставляют эти наборы одним нажатием. Клик по заголовку «Год», «Квартиль», «Белый список», «Импакт-фактор» — сортировка. Флажок «проверено» в строке — для себя, сохраняется в браузере.</li>
 <li>Ctrl+Enter в поле списка — найти публикации; снимок можно вставить Ctrl+V или перетащить в любое место страницы. Прошлая проверка сохраняется в браузере — при следующем открытии её можно продолжить.</li>
 <li>Пометки: <span class="chip ok">да</span> — подтверждено базой; <span class="chip check">проверьте</span> — источники расходятся или совпадение неполное, решите сами; <span class="chip unk">не указан / не найдено</span> — утилита этого не знает, это <b>не</b> означает несоответствие; <span class="chip no">нет</span> — база отвечает «нет»; <span class="chip n">Q1</span> — просто значение.</li>
-<li>Импакт-фактор в таблицах — «цитирований на документ за 2 года» SCImago: близок к импакт-фактору, но не равен импакт-фактору WoS. CiteScore Scopus — отдельный показатель за последний год (сейчас), его квартиль может отличаться от квартиля SCImago; в фильтр и наборы он не входит. Квартиль WoS и индекс Хирша Scopus, WoS, РИНЦ открытых источников не имеют — утилита даёт ссылки, где посмотреть. Corresponding author — как отмечено в OpenAlex; если не отмечен, никто не подставляется.</li>
+<li>Показатель в таблицах — «цитирований на документ (2 года)» SCImago. Это не Journal Impact Factor (JIF) Clarivate/JCR. CiteScore Scopus — отдельный показатель за последний год (сейчас), его квартиль может отличаться от квартиля SCImago; в фильтр и наборы он не входит. Квартиль WoS и индекс Хирша Scopus, WoS, РИНЦ открытых источников не имеют — утилита даёт ссылки, где посмотреть. Corresponding author — как отмечено в OpenAlex; если не отмечен, никто не подставляется.</li>
 <li><b>Индекс Хирша</b>: крупно — наибольшее из полученных значений с подписью базы. OpenAlex — сам; РИНЦ, Scopus, Web of Science, Google Scholar — откройте профиль по ссылке, скопируйте страницу и нажмите «вставить страницу профиля».</li>
 <li>Если что-то не находится — «Связь и настройки» → «Проверить связь».</li>
 </ol>
@@ -232,7 +232,7 @@ tr.done>td{background:#f1f8f1}td .mk{display:block;margin-top:4px;font-size:11.5
 <div style="max-width:420px;margin-bottom:8px"><label for="orcidToken">Токен ORCID «/read-public» (если реестр его потребует)</label><input type="text" id="orcidToken"><div class="dim">Бесплатный, выдаётся в личном кабинете ORCID (раздел «Developer tools»). Хранится только в этом браузере. <span id="orcidNote"></span></div></div>
 <p><label style="font-weight:400"><input type="checkbox" id="useOA" checked> Использовать OpenAlex (corresponding author, тип «обзор», поиск автора, запасной поиск статей)</label></p>
 <p><label style="font-weight:400"><input type="checkbox" id="useCache" checked> Брать ответы Crossref и OpenAlex из кеша браузера, если им меньше 14 дней (повторная проверка того же списка — мгновенно, лимиты не тратятся)</label> <button id="cacheClear" class="sec small">Очистить кеш</button> <span id="cacheInfo" class="dim"></span></p>
-<details class="adv"><summary>Дополнительно</summary><div style="max-width:420px"><label for="oaKey">Свой ключ OpenAlex</label><input type="text" id="oaKey"><div class="dim">Ключ OpenAlex уже встроен в страницу — поле заполнять не нужно. Своё значение нужно, только если встроенный дневной лимит закончился (OpenAlex отвечает «база ограничила число запросов»). Хранится только в этом браузере.</div></div></details>
+<details class="adv"><summary>Дополнительно</summary><div style="max-width:420px"><label for="oaKey">Свой ключ OpenAlex</label><input type="text" id="oaKey"><div class="dim">Встроенный ключ OpenAlex уже подключён; поле необязательно. При необходимости можно ввести свой ключ, он заменит встроенный только в этом браузере. Встроенный ключ виден посетителям в коде страницы, дневной лимит общий.</div></div></details>
 </details>
 </div>
 <div class="ask noprint">Что проверяем <i>снимок можно вставить сразу — Ctrl+V откроет «Публикации»</i></div>
@@ -243,7 +243,7 @@ tr.done>td{background:#f1f8f1}td .mk{display:block;margin-top:4px;font-size:11.5
 <div class="lab">Что получите</div><ul class="get"><li>Индекс Хирша — наибольший, с базой</li><li>Профили ORCID, Scopus, WoS, eLibrary — ссылками</li><li>Все статьи с квартилем и Белым списком</li><li>Corresponding и организация в каждой статье</li></ul>
 <div class="msrc"><b>Откуда:</b> OpenAlex, реестр ORCID · организация никуда не отправляется</div><div class="mgo">Начать →</div></button>
 <button class="mcard" data-p="secJ"><div class="hd"><span class="n">02</span><span class="t">Журнал</span><span class="k">Alt+2</span></div>
-<div class="lead">Быстрая справка по изданию: квартиль, импакт-фактор и Белый список на нужный год.</div>
+<div class="lead">Быстрая справка по изданию: квартиль, цитирования на документ (2 года) и Белый список на нужный год.</div>
 <div class="lab">Что вводить</div><div class="ex"><span>Nature</span><span>0028-0836</span><span>Phys. Rev. B</span></div>
 <div class="lab">Что получите</div><ul class="get"><li>Квартиль SCImago — на год и по годам</li><li>Импакт-фактор и уровень Белого списка</li><li>CiteScore Scopus и индексация WoS · Scopus · RSCI</li><li>Ссылки для перепроверки</li></ul>
 <div class="msrc"><b>Откуда:</b> SCImago, Белый список, Scopus, CiteScore — встроены, без интернета</div><div class="mgo">Начать →</div></button>
@@ -255,7 +255,7 @@ tr.done>td{background:#f1f8f1}td .mk{display:block;margin-top:4px;font-size:11.5
 </div>
 <div class="seg noprint" id="seg" role="tablist">
 <button data-p="secA" role="tab"><span class="n">01</span><span class="t">Автор<span class="dot" title="здесь уже есть введённое"></span></span><span class="h">ФИО, ORCID, Scopus ID — Хирш, профили, все статьи</span><span class="k">Alt+1</span></button>
-<button data-p="secJ" role="tab"><span class="n">02</span><span class="t">Журнал<span class="dot" title="здесь уже есть введённое"></span></span><span class="h">название или ISSN — квартиль, импакт-фактор, БС</span><span class="k">Alt+2</span></button>
+<button data-p="secJ" role="tab"><span class="n">02</span><span class="t">Журнал<span class="dot" title="здесь уже есть введённое"></span></span><span class="h">название или ISSN — квартиль, цитируемость, БС</span><span class="k">Alt+2</span></button>
 <button data-p="secL" role="tab"><span class="n">03</span><span class="t">Публикации<span class="dot" title="здесь уже есть введённое"></span></span><span class="h">список, снимок, PDF или Word</span><span class="k">Alt+3</span></button>
 </div>
 <div id="inp" class="cols noprint">

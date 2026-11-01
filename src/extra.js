@@ -45,10 +45,10 @@ const scLink = sc => sc && sc.id ? 'https://www.scopus.com/sourceid/' + sc.id : 
 function findSc(issns, title) {
   if (!scHas()) return [null, null];
   const hit = new Set(); (issns || []).map(normIssn).forEach(x => (REF.scIssn.get(x) || []).forEach(i => hit.add(i)));
-  if (hit.size) return [scRec([...hit][0]), hit.size === 1 ? 'issn' : 'ambiguous'];
+  if (hit.size) return hit.size === 1 ? [scRec([...hit][0]), 'issn'] : [null, 'ambiguous'];
   const t = norm(title); if (!t) return [null, null];
   const a = REF.scTitle.get(t) || REF.scTitle.get(t.replace(/^the /, '')); if (!a) return [null, null];
-  return [scRec(a[0]), a.length === 1 ? 'title' : 'ambiguous'];
+  return a.length === 1 ? [scRec(a[0]), 'title'] : [null, 'ambiguous'];
 }
 
 /* ---------- 1а. CiteScore Scopus (0.9, правка 6) ----------
@@ -110,9 +110,9 @@ function journalEntity(issns, seed) {
   for (let pass = 0; pass < 2; pass++) {
     [e.sj, e.wl, e.sc, e.cs].filter(Boolean).forEach(r => r.issns.forEach(x => e.issns.add(normIssn(x))));
     const is = [...e.issns];
-    if (!e.sj) { const h = new Set(); is.forEach(x => (REF.sjIssn.get(x) || []).forEach(i => h.add(i))); if (h.size) { e.sj = sjRec([...h][0]); if (h.size > 1) e.notes.push('в SCImago несколько изданий с этим ISSN — взято первое, проверьте'); } }
-    if (!e.wl) { const h = new Set(); is.forEach(x => (REF.wlIssn.get(x) || []).forEach(i => h.add(i))); if (h.size) { e.wl = wlRec([...h][0]); if (h.size > 1) e.notes.push('в Белом списке несколько изданий с этим ISSN — взято первое, проверьте'); } }
-    if (!e.sc && scHas()) { const h = new Set(); is.forEach(x => (REF.scIssn.get(x) || []).forEach(i => h.add(i))); if (h.size) e.sc = scRec([...h][0]); }
+    if (!e.sj) { const h = new Set(); is.forEach(x => (REF.sjIssn.get(x) || []).forEach(i => h.add(i))); if (h.size === 1) e.sj = sjRec([...h][0]); else if (h.size > 1) e.notes.push('в SCImago несколько изданий с этим ISSN — квартиль не определён, уточните издание'); }
+    if (!e.wl) { const h = new Set(); is.forEach(x => (REF.wlIssn.get(x) || []).forEach(i => h.add(i))); if (h.size === 1) e.wl = wlRec([...h][0]); else if (h.size > 1) e.notes.push('в Белом списке несколько изданий с этим ISSN — уровень не определён, уточните издание'); }
+    if (!e.sc && scHas()) { const h = new Set(); is.forEach(x => (REF.scIssn.get(x) || []).forEach(i => h.add(i))); if (h.size === 1) e.sc = scRec([...h][0]); else if (h.size > 1) e.notes.push('в Scopus несколько изданий с этим ISSN — статус не определён, уточните издание'); }
     if (!e.cs) e.cs = findCs([e.sj && e.sj.sid, e.sc && e.sc.id], is);
   }
   e.issns = [...e.issns]; e.title = (e.sj && e.sj.title) || (e.wl && e.wl.title.split(' | ')[0]) || (e.sc && e.sc.title) || (e.cs && e.cs.title) || '';
@@ -140,7 +140,7 @@ function findJournalQuery(q) {
   // уверенно: по ISSN; или лучшее совпадение названия от 0,85 и заметно лучше следующего (на 0,1)
   if (top && top.how === 'title' && out.hits.filter(h => h.how === 'title').length === 1) out.sure = top;  // название совпало точно и только у одного
   else if (top && (top.how === 'issn' || (top.score >= 0.85 && !(out.hits[1] && out.hits[1].score > top.score - 0.1)))) out.sure = top;
-  if (top && top.how === 'issn' && out.hits.filter(h => h.how === 'issn').length > 1) out.sure = null;
+  if (top && top.how === 'issn' && (out.hits.filter(h => h.how === 'issn').length > 1 || top.e.notes.some(n => /несколько изданий/.test(n)))) out.sure = null;
   return out;
 }
 /* Сведения об издании на год (год необязателен) — для показа и выгрузки */
@@ -241,8 +241,10 @@ function hirschSummary(oaVals, pasted) {
   const warns = [];
   ['openalex', 'scopus', 'wos', 'rinc', 'gs'].forEach(b => { const vs = vals.filter(x => x.base === b); const u = [...new Set(vs.map(x => x.v))]; if (u.length > 1) warns.push(`${H_BASE_NAME[b]}: несколько значений (${vs.map(x => x.v + (x.id ? ' — профиль ' + x.id : '')).join(', ')}) — ${b === 'scopus' ? 'в Scopus несколько профилей автора' : 'несколько профилей'}, взято наибольшее; проверьте`); });
   vals.filter(x => x.nameOk === false).forEach(x => warns.push(`на странице ${H_BASE_NAME[x.base]} не найдена фамилия автора — проверьте, тот ли это профиль`));
-  const best = vals.slice().sort((a, b) => b.v - a.v)[0] || null;
-  const perBase = {}; vals.forEach(x => { if (!perBase[x.base] || perBase[x.base].v < x.v) perBase[x.base] = x; });
+  // Явное несовпадение фамилии: число остаётся в списке с предупреждением, но не участвует в выборе максимума.
+  const verified = vals.filter(x => x.nameOk !== false);
+  const best = verified.slice().sort((a, b) => b.v - a.v)[0] || null;
+  const perBase = {}; verified.forEach(x => { if (!perBase[x.base] || perBase[x.base].v < x.v) perBase[x.base] = x; });
   return { vals, best, perBase, warns };
 }
 

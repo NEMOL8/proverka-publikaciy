@@ -410,7 +410,23 @@ eq('транслит / несколько написаний фамилии', A.
   aw = await A.authorWorks({ ids: ['A1', 'A9'] }, 2021);
   eq('сеть / публикации по профилям: запрос по двум профилям, все годы', [/filter=author\.id:A1\|A9,type:article\|review/.test(urls[0]), /from_publication_date/.test(urls[0]), aw.works[0].year, aw.works[0].doi, aw.works[0].authors[0]], [true, false, 2019, '10.1/a', { id: 'A1', name: '', orcid: '', corr: true, inst: [], raw: [] }]);
   N.fetch = async () => res(200, { meta: { next_cursor: 'more' }, results: [{ doi: null, title: 'A', publication_year: 2020, type: 'article', primary_location: null, authorships: [] }] }); aw = await A.authorWorks({ ids: ['A1'] }, 2021);
-  eq('сеть / публикации: больше 2000 — помечено, что список обрезан', [aw.capped, aw.works.length], [true, 10]);
+  eq('сеть / публикации: больше 2000 — помечено, что список обрезан', [aw.capped, aw.works.length, aw.partial], [true, 20, true]);
+  // 0.9.1: сбой cursor после успешной первой страницы не уничтожает уже найденные работы.
+  let pageRequests = [];
+  N.fetch = async u => { pageRequests.push(decodeURIComponent(u)); return pageRequests.length === 1
+    ? res(200, { meta: { next_cursor: 'second' }, results: [{ doi: 'https://doi.org/10.1/keep', title: 'Keep this paper', publication_year: 2024, type: 'article', primary_location: null, authorships: [] }] })
+    : res(401, {}); };
+  aw = await A.authorWorks({ ids: ['A1'] }, 2021);
+  eq('0.9.1 / OpenAlex: вторая страница 401 — первая сохранена и отмечена как неполная',
+    [aw.source, aw.works.length, aw.works[0].doi, aw.partial, aw.capped, /401/.test(aw.err), pageRequests.every(u => /per-page=100/.test(u))],
+    ['OpenAlex', 1, '10.1/keep', true, false, true, true]);
+  // И при наличии ORCID нельзя тихо подменять полученный фрагмент другой базой.
+  pageRequests = []; N.fetch = async u => { pageRequests.push(u); return pageRequests.length === 1
+    ? res(200, { meta: { next_cursor: 'second' }, results: [{ doi: 'https://doi.org/10.1/orcidkeep', title: 'Keep this paper', publication_year: 2024, type: 'article', primary_location: null, authorships: [] }] })
+    : res(403, {}); };
+  aw = await A.authorWorks({ orcid: '0000-0002-1825-0097' }, 2021);
+  eq('0.9.1 / OpenAlex: сбой второй страницы с ORCID — без подмены Crossref',
+    [aw.source, aw.works.length, aw.partial, pageRequests.length], ['OpenAlex', 1, true, 2]);
   N.useOA = false; er = null; try { await A.authorWorks({ ids: ['A1'] }, 2021); } catch (e) { er = 'err'; } eq('сеть / OpenAlex выключен и ORCID нет: ошибка, а не пустой список', er, 'err'); N.useOA = true;
   N.fetch = async u => res(200, { results: [{ id: 'https://openalex.org/A77', display_name: 'Petr Petrov', orcid: 'https://orcid.org/0000-0002-1825-0097', works_count: 40, last_known_institutions: [{ display_name: 'Test University' }] }] });
   const sa = await A.searchAuthors('Петров П.П.'); eq('сеть / поиск автора по имени', [sa[0].id, sa[0].orcid, sa[0].inst, sa[0].works], ['A77', '0000-0002-1825-0097', 'Test University', 40]);
@@ -630,6 +646,70 @@ eq('транслит / несколько написаний фамилии', A.
     { const r = A.findJournalQuery('Fictional Book Series on Sorbents'), f = r.sure && A.journalFacts(r.sure.e);
       eq('0.9 CiteScore / режим «Журнал»: издание только в CiteScore находится по названию, CiteScore и квартиль в сведениях', [!!f, f && f.cs && f.cs.q, f && f.cs && f.cs.v, f && f.notes.some(n => /CiteScore/.test(n))], [true, 3, 1.6, true]); }
     eq('0.9 CiteScore / короткая запись для таблицы и выгрузки', [A.csShort(jac), A.csShort(null)], ['10,7 Q1', '']);
+  }
+  /* 0.9 audit: заявленные данные чужого профиля не должны попадать в максимум h-index. */
+  {
+    const h = A.hirschSummary([{ h: 12, id: 'A100' }], [
+      { base: 'scopus', val: 99, id: 'Stranger', nameOk: false },
+      { base: 'rinc', val: 14, id: '123456', nameOk: true }
+    ]);
+    eq('0.9 аудит / чужой профиль с большим h-index не становится максимальным',
+      [h.best.base, h.best.v, !!h.perBase.scopus, h.warns.some(x => /не найдена фамилия/.test(x))],
+      ['rinc', 14, false, true]);
+    const onlyWrong = A.hirschSummary([], [{ base: 'scopus', val: 88, nameOk: false }]);
+    eq('0.9 аудит / только чужой профиль не даёт итогового h-index',
+      [onlyWrong.best, !!onlyWrong.perBase.scopus, onlyWrong.vals.length], [null, false, 1]);
+  }
+  /* 0.9 audit: один ISSN в нескольких записях Scopus — предупреждение, не молчаливый выбор. */
+  {
+    DATA.sc.rows.push(
+      ['Fictional Scopus Duplicate A', '99909997', 99000991, 1, '2020-ongoing'],
+      ['Fictional Scopus Duplicate B', '99909997', 99000992, 1, '2020-ongoing']);
+    A.loadRef(DATA);
+    const j = A.findJournalQuery('9990-9997');
+    eq('0.9 аудит / неоднозначный Scopus ISSN отмечен как сомнительный',
+      [!!j.sure, j.hits.some(x => x.e.notes.some(n => /Scopus несколько изданий/.test(n)))], [false, false]);
+  }
+  // 0.9.2: пересекающиеся ISSN не должны приписывать одному изданию квартиль или уровень другого.
+  {
+    const old = DATA.sj.length;
+    DATA.sj.push(['Fictional Conflicting One', '88887777', 0, '', 999998, ...Array(DATA.sjYears.length * 2).fill(1)]);
+    DATA.sj.push(['Fictional Conflicting Two', '88887777', 0, '', 999999, ...Array(DATA.sjYears.length * 2).fill(4)]);
+    A.loadRef(DATA);
+    const q = A.findJournalQuery('8888-7777');
+    eq('0.9.2 / конфликтный SCImago ISSN не назначает квартиль', [q.sure, q.hits.length], [null, 0]);
+    DATA.sj.length = old; A.loadRef(DATA);
+    const sc = A.findSc(['9990-9997'], '');
+    eq('0.9.2 / конфликтный Scopus ISSN не назначает статус', [sc[0], sc[1]], [null, 'ambiguous']);
+  }
+  // 0.9.1: CSV принимает заголовки из внешних источников — не позволяет превращать их в формулы Excel.
+  {
+    const st = fs.readFileSync(B + '/src/store.js', 'utf8');
+    const start = st.indexOf('const cellTxt = '), stop = st.indexOf('const CRC = ', start);
+    const C = new Function('fmtNum', st.slice(start, stop) + '\nreturn {csvBlob,safeCsvText};')(v => String(v));
+    eq('0.9.1 / CSV: опасные префиксы обезврежены, обычное название не изменено',
+      ['=1+1', '+SUM(1;2)', '-2+3', '@SUM(1,2)', '  =CMD()', '\t=NOW()', 'The Study'].map(C.safeCsvText),
+      ["'=1+1", "'+SUM(1;2)", "'-2+3", "'@SUM(1,2)", "'  =CMD()", "'\t=NOW()", 'The Study']);
+    eq('0.9.1 / CSV: числовые поля остаются числами, обычный минус сохраняется для чисел',
+      [C.safeCsvText(4), C.safeCsvText(-12), C.safeCsvText('Nature')], ['4', '-12', 'Nature']);
+    const csv = await C.csvBlob([['Название','Значение'],['=1+1',2],['Nature',-3]]).text();
+    eq('0.9.1 / CSV: сериализация защищает формулу, не меняет число и отделяет строки',
+      [csv.includes("'=1+1;2"), csv.includes('Nature;-3'), csv.includes('\r\n')], [true,true,true]);
+  }
+  // Независимые регрессионные проверки OCR: общий разрыв первой буквы, без словаря конкретных названий.
+  {
+    const O = new Function(fs.readFileSync(B + '/src/ocr.js', 'utf8') + '\nreturn {repairOcrHeadlineSpacing};')();
+    eq('0.9.2 OCR: склеивает ошибочно разделённую букву в заголовке',
+      O.repairOcrHeadlineSpacing('THERMAL STABILITY OF L AYERED COMPOSITE COATINGS'), 'THERMAL STABILITY OF LAYERED COMPOSITE COATINGS');
+    eq('0.9.2 OCR: сохраняет артикль A и термин B CELLS',
+      O.repairOcrHeadlineSpacing('THERMAL STABILITY OF A COMPOSITE AND B CELLS'), 'THERMAL STABILITY OF A COMPOSITE AND B CELLS');
+    eq('0.9.2 OCR: сохраняет X RAY и обычную смешанную запись',
+      [O.repairOcrHeadlineSpacing('THERMAL STABILITY OF X RAY DIFFRACTION'),
+       O.repairOcrHeadlineSpacing('Ivanov I. The X AXIS was shown')],
+      ['THERMAL STABILITY OF X RAY DIFFRACTION', 'Ivanov I. The X AXIS was shown']);
+    eq('0.9.2 OCR: кириллические заголовки не меняет',
+      O.repairOcrHeadlineSpacing('СИНТЕЗ Н АНОСТРУКТУРИРОВАННЫХ ПОКРЫТИЙ'),
+      'СИНТЕЗ Н АНОСТРУКТУРИРОВАННЫХ ПОКРЫТИЙ');
   }
   console.log(`Пройдено ${pass} из ${pass + fail}`); fails.forEach(f => console.log('  НЕ ПРОЙДЕНО — ' + f)); process.exit(fail ? 1 : 0);
 })();

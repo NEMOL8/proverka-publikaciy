@@ -67,8 +67,14 @@ function sortRows(rows, id, keyOf) {
 function download(name, blob) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); }
 const today = () => new Date().toISOString().slice(0, 10);
 const cellTxt = v => v == null ? '' : (typeof v === 'number' && !Number.isInteger(v) ? fmtNum(v) : String(v));
+/* CSV может быть открыт в Excel: внешние текстовые поля не должны выполняться как формулы. */
+const safeCsvText = v => {
+  const s = cellTxt(v);
+  if (typeof v === 'number') return s;
+  return /^[\s\u0000-\u001f]*[=+\-@]/u.test(s) || /^[\u0000-\u001f]/u.test(s) ? "'" + s : s;
+};
 function csvBlob(rows) {
-  const q = v => { const t = cellTxt(v).replace(/\r?\n/g, ' '); return /[";\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  const q = v => { const t = safeCsvText(v).replace(/\r?\n/g, ' '); return /[";\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
   return new Blob(['﻿' + rows.map(r => r.map(q).join(';')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
 }
 const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
