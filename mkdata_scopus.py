@@ -25,7 +25,11 @@ def col(head, *pats, need=True, name=''):
             if re.search(p, h, re.I): return i
     if need: sys.exit(f'в листе не найден столбец «{name or pats[0]}». Заголовки: {head}')
     return None
-iss = lambda v: re.sub(r'[^0-9X]', '', str(v or '').upper())
+# Excel может прочитать ISSN числом без ведущих нулей; восстанавливаем до восьми знаков.
+def iss(v):
+    if v is None: return ''
+    s = re.sub(r'[^0-9X]', '', str(v).upper())
+    return s.zfill(8) if 0 < len(s) <= 8 else ''
 txt = lambda v: str(v).strip() if v is not None else ''
 def num(v):
     try: return int(float(v))

@@ -65,8 +65,8 @@ function journalSheet(e, year, head, notes) {
   if (sj) {
     const nowDiff = f.qNowYear !== f.qYear;
     h += `<div><div class="cap">Квартиль SCImago ${f.qYear}</div>${big(f.q ? 'Q' + f.q : '—', (year && !f.qExact ? `за ${year} данных нет — взят ${f.qYear}` : '') + (nowDiff ? `${year && !f.qExact ? '<br>' : ''}сейчас (${f.qNowYear}): ${f.qNow !== f.q ? chip('check', qS(f.qNow)) : qS(f.qNow)}` : (year ? '' : 'сейчас')))}</div>`;
-    h += `<div><div class="cap">Импакт-фактор</div>${f.cpd != null ? big(fmtNum(f.cpd), `цит. на документ SCImago, ${f.qYear}` + (nowDiff && f.cpdNow != null ? `<br>сейчас (${f.qNowYear}): ${fmtNum(f.cpdNow)}` : '')) : big('—', 'нет данных', 't')}</div>`;
-  } else h += `<div><div class="cap">Квартиль SCImago</div>${big(chip('unk', 'нет в SCImago'), e.sc || e.cs ? 'в Scopus есть, квартиля SCImago нет' : '', 't')}</div><div><div class="cap">Импакт-фактор</div>${big('—', 'нет в SCImago', 't')}</div>`;
+    h += `<div><div class="cap">Цитирований на документ (2 года)</div>${f.cpd != null ? big(fmtNum(f.cpd), `цит. на документ SCImago, ${f.qYear}` + (nowDiff && f.cpdNow != null ? `<br>сейчас (${f.qNowYear}): ${fmtNum(f.cpdNow)}` : '')) : big('—', 'нет данных', 't')}</div>`;
+  } else h += `<div><div class="cap">Квартиль SCImago</div>${big(chip('unk', 'нет в SCImago'), e.sc || e.cs ? 'в Scopus есть, квартиля SCImago нет' : '', 't')}</div><div><div class="cap">Цитирований на документ (2 года)</div>${big('—', 'нет в SCImago', 't')}</div>`;
   if (wl) { const a = wlAt(wl, year || null); h += `<div><div class="cap">Белый список${year ? ' ' + year : ''}</div>${a.excluded ? big(chip('check', 'исключён ' + wl.disc), '', 't') : big(a.lv || '—', (a.lv ? 'уровень' : 'без уровня') + (a.y ? ` (${a.y})` : '') + (!a.excluded && (a.curExcl || a.cur !== a.lv) ? '<br>' + chip('check', a.curExcl ? 'сейчас исключён ' + wl.disc : 'сейчас ' + (a.cur ? 'уровень ' + a.cur : 'без уровня')) : ''))}</div>`; }
   else h += `<div><div class="cap">Белый список</div>${big('нет', 'нет в списке', 't')}</div>`;
   h += `<div><div class="cap">Квартиль SCImago по годам</div>${sj ? yearChips(sj, year || null, 6) + (Object.keys(sj.hist).length > 6 ? `<details class="mini"><summary>все годы</summary>${yearChips(sj, year || null, 0)}</details>` : '') + catsHtml(f.cats) : '<span class="dim">нет данных</span>'}</div>`;
@@ -90,7 +90,7 @@ function renderJournals() {
   el.innerHTML = h; $('jOut').style.display = '';
 }
 function journalTable() {
-  const y = JR.year, L = [['Запрос', 'Издание', 'ISSN', 'Квартиль SCImago' + (y ? ' (' + y + ')' : ''), 'Год квартиля', 'Квартиль сейчас (' + REF.sjYear + ')', 'Импакт-фактор (SCImago, цит. на документ за 2 года)', 'Белый список' + (y ? ' (' + y + ')' : ''), 'Индексация (Белый список)', 'Scopus (список источников)'].concat(csHead()).concat(['Ссылка SCImago', 'Примечания'])];
+  const y = JR.year, L = [['Запрос', 'Издание', 'ISSN', 'Квартиль SCImago' + (y ? ' (' + y + ')' : ''), 'Год квартиля', 'Квартиль сейчас (' + REF.sjYear + ')', 'Цитирований на документ (2 года), SCImago', 'Белый список' + (y ? ' (' + y + ')' : ''), 'Индексация (Белый список)', 'Scopus (список источников)'].concat(csHead()).concat(['Ссылка SCImago', 'Примечания'])];
   JR.rows.forEach(r => {
     if (r.pick == null) { L.push([r.q, r.res.hits.length ? 'не выбран: ' + r.res.hits.map(x => x.e.title).join('; ') : 'не найдено в справочниках']); return; }
     const hit = r.res.hits[r.pick], e = hit.e, f = journalFacts(e, y);

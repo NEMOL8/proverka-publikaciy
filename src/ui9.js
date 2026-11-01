@@ -53,7 +53,7 @@ function initJsug() {
 /* ----- Источники данных: в «Источники данных» на главной и строкой внизу подстраницы ----- */
 function sourcesList() {
   if (!REF) return [];
-  return [`Квартиль и импакт-фактор («цитирований на документ за 2 года») — SCImago Journal & Country Rank, ${REF.sjYears[0]}–${REF.sjYear}.`,
+  return [`Квартиль и показатель «цитирований на документ (2 года)» — SCImago Journal & Country Rank, ${REF.sjYears[0]}–${REF.sjYear}. Это не JIF от Clarivate/JCR.`,
     `Белый список — справочник на ${REF.wlDate}; свежий уровень — с сайта Белого списка (journalrank.rcsi.science).`,
     scHas() ? `Индексация в Scopus — Scopus Source List, ${REF.scDate}.` : '',
     csHas() ? `CiteScore, процентиль и квартиль Scopus — ${csSrc(null)}; ссылка у каждого значения ведёт на страницу издания в Scopus.` : '',

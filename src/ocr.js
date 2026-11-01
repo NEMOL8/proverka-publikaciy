@@ -55,11 +55,20 @@ async function readLines(w, cv, psm) {
 }
 /* Снимок увеличивается до ширины не меньше 2400 точек: мелкий текст иначе не читается.
    Затем предобработка (правка 4, 0.7.11): серый по минимуму каналов, растяжение контраста, повышение резкости, чёрно-белое по Otsu. */
-async function toCanvas(blob, raw) {
+async function toCanvas(blob, raw, early) {
   const bmp = await createImageBitmap(blob); const k = Math.min(4, Math.max(1, 2400 / bmp.width));
   const cv = document.createElement('canvas'); cv.width = Math.round(bmp.width * k); cv.height = Math.round(bmp.height * k);
-  const cx = cv.getContext('2d', { willReadFrequently: true }); cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height); cx.imageSmoothingQuality = 'high'; cx.drawImage(bmp, 0, 0, cv.width, cv.height);
-  if (!raw) preprocess(cx, cv.width, cv.height);
+  // Для второго прохода по мелким снимкам очищаем пиксели до увеличения:
+  // иначе JPEG-артефакты могут сливаться с тонкими штрихами заголовков.
+  let source = bmp;
+  if (early && !raw && bmp.width < 800) {
+    const native = document.createElement('canvas'); native.width = bmp.width; native.height = bmp.height;
+    const nc = native.getContext('2d', { willReadFrequently: true });
+    nc.fillStyle = '#fff'; nc.fillRect(0, 0, native.width, native.height); nc.drawImage(bmp, 0, 0);
+    preprocess(nc, native.width, native.height); source = native;
+  }
+  const cx = cv.getContext('2d', { willReadFrequently: true }); cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height); cx.imageSmoothingQuality = 'high'; cx.drawImage(source, 0, 0, cv.width, cv.height);
+  if (!raw && source === bmp) preprocess(cx, cv.width, cv.height);
   return { cv, cx, small: bmp.width < 1200, width: bmp.width };
 }
 /* Синий и фиолетовый текст ссылок на светло-сером фоне (eLibrary) по яркости получается серым и тонет в фоне;
@@ -100,6 +109,40 @@ function findGrid(cx, W, H) {
   const spans = l => l.slice(0, -1).map((a, i) => [a[1] + 1, l[i + 1][0] - 1]).filter(s => s[1] - s[0] > 12);
   T = 150; return { rows: spans(hl), cols: spans(vl), dark };
 }
+/* Второй вариант предобработки может восстановить тонкий штрих заголовка,
+   но испортить обычный текст (например, строку патента). Поэтому соединяем
+   только полные группы заглавных кириллических строк, когда они заметно
+   полнее и почти совпадают по содержанию; остальные строки сохраняем. */
+function mergeCyrHeadlines(main, alternate) {
+  const a = main.split('\n'), b = alternate.split('\n');
+  const caps = t => {
+    const letters = t.match(/[А-Яа-яЁё]/g) || [];
+    return letters.length >= 5 && letters.filter(c => /[А-ЯЁ]/.test(c)).length / letters.length >= 0.90;
+  };
+  const groups = lines => {
+    const out = []; let start = -1;
+    lines.forEach((s, i) => { if (caps(s)) { if (start < 0) start = i; }
+      else if (start >= 0) { out.push([start, i]); start = -1; } });
+    if (start >= 0) out.push([start, lines.length]); return out;
+  };
+  const norm = x => x.replace(/[^А-ЯЁ]/gi, '').toUpperCase();
+  const orig = groups(a), alt = groups(b), changes = [];
+  for (let i = 0; i < Math.min(orig.length, alt.length); i++) {
+    const [x, y] = orig[i], [u, v] = alt[i];
+    const s = a.slice(x, y).join(' '), t = b.slice(u, v).join(' ');
+    const n = norm(s), m = norm(t);
+    // Сохраняем исходник, если второй вариант короче, содержит лишнюю
+    // пунктуацию либо относится к другой карточке/строке.
+    if (m.length <= n.length || m.length > n.length + 12 || /[!?]{1,}/.test(t) && !/[!?]{1,}/.test(s)) continue;
+    const common = Math.min(n.length, m.length), dist = typeof lev === 'function' ? lev(n, m, 12) : 13;
+    if (common < 15 || dist > 6 || dist / common > 0.06) continue;
+    changes.push([x, y, b.slice(u, v)]);
+  }
+  for (let i = changes.length - 1; i >= 0; i--) {
+    const [x, y, lines] = changes[i]; a.splice(x, y - x, ...lines);
+  }
+  return a.join('\n');
+}
 async function ocrImage(blob, raw) {
   const { cv, cx, small } = await toCanvas(blob, raw); const w = await getOcr(); const g = findGrid(cx, cv.width, cv.height);
   if (g && g.rows.length >= 1 && g.cols.length >= 3) {
@@ -124,6 +167,12 @@ async function ocrImage(blob, raw) {
     if (lines.length) { const text = lines.join('\n'); return { text, conf: nc ? Math.round(conf / nc) : 0, small, table: true, q: ocrQuality(text) }; }
   }
   const data = await readLines(w, cv, '3');
+  if (!raw && small && cv.width && isElibList(data.text)) {
+    const alt = await toCanvas(blob, false, true);
+    await w.rus.setParameters({ tessedit_pageseg_mode: '3' });
+    const { data: second } = await w.rus.recognize(alt.cv);
+    data.text = mergeCyrHeadlines(data.text, second.text);
+  }
   return { text: data.text, conf: Math.round(data.conf), small, table: false, q: ocrQuality(data.text) };
 }
 

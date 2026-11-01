@@ -155,9 +155,10 @@ function subRu(name) { const n = String(name || '').trim(); return SUBFIELD_RU[n
 if (typeof module !== 'undefined') module.exports = { SUBFIELD_RU, subRu };
 
 /* ===== Проверка публикаций: правила (без сети, без ИИ) ===== */
-const VERSION = '0.9', VERSION_DATE = '26.10.2026';
+const VERSION = '0.9.2', VERSION_DATE = '01.11.2026';
 /* Что нового — показывается на странице */
 const CHANGES = [
+  ['0.9.1', '31.10.2026', ['Сбой следующей страницы OpenAlex больше не удаляет уже найденные публикации автора: показывается предупреждение о неполном результате.', 'Выгрузка CSV защищена от превращения названий статей и других строк в формулы Excel.', 'Сайт и HTML пересобраны с включённым ключом OpenAlex; сохранено исправление OCR мелких снимков eLibrary.']],
   ['0.9', '26.10.2026', ['Начальный экран «Что проверяем»: три большие кнопки — Автор, Журнал, Публикации (Alt+1, Alt+2, Alt+3); под ними только выбранный раздел. При каждом открытии ни один раздел не выбран; введённое при переключении сохраняется. Снимок (Ctrl+V) или перетащенный документ сами открывают «Публикации».',
     'Результат открывается на отдельной подстранице: «← Новый поиск» (введённое в поля сохраняется), вкладки «Автор · Журналы · Публикации», кнопки «Скопировать · Excel · CSV · Печать». Кнопки «Назад» и «Вперёд» браузера работают.',
     'Подсказки при вводе журнала: под полем — подходящие журналы из справочников, по началу названия или любого слова, с ISSN и пометками SCImago, Белого списка и Scopus; выбор мышью или стрелками и Enter.',
@@ -878,10 +879,10 @@ const scLink = sc => sc && sc.id ? 'https://www.scopus.com/sourceid/' + sc.id : 
 function findSc(issns, title) {
   if (!scHas()) return [null, null];
   const hit = new Set(); (issns || []).map(normIssn).forEach(x => (REF.scIssn.get(x) || []).forEach(i => hit.add(i)));
-  if (hit.size) return [scRec([...hit][0]), hit.size === 1 ? 'issn' : 'ambiguous'];
+  if (hit.size) return hit.size === 1 ? [scRec([...hit][0]), 'issn'] : [null, 'ambiguous'];
   const t = norm(title); if (!t) return [null, null];
   const a = REF.scTitle.get(t) || REF.scTitle.get(t.replace(/^the /, '')); if (!a) return [null, null];
-  return [scRec(a[0]), a.length === 1 ? 'title' : 'ambiguous'];
+  return a.length === 1 ? [scRec(a[0]), 'title'] : [null, 'ambiguous'];
 }
 
 /* ---------- 1а. CiteScore Scopus (0.9, правка 6) ----------
@@ -943,9 +944,9 @@ function journalEntity(issns, seed) {
   for (let pass = 0; pass < 2; pass++) {
     [e.sj, e.wl, e.sc, e.cs].filter(Boolean).forEach(r => r.issns.forEach(x => e.issns.add(normIssn(x))));
     const is = [...e.issns];
-    if (!e.sj) { const h = new Set(); is.forEach(x => (REF.sjIssn.get(x) || []).forEach(i => h.add(i))); if (h.size) { e.sj = sjRec([...h][0]); if (h.size > 1) e.notes.push('в SCImago несколько изданий с этим ISSN — взято первое, проверьте'); } }
-    if (!e.wl) { const h = new Set(); is.forEach(x => (REF.wlIssn.get(x) || []).forEach(i => h.add(i))); if (h.size) { e.wl = wlRec([...h][0]); if (h.size > 1) e.notes.push('в Белом списке несколько изданий с этим ISSN — взято первое, проверьте'); } }
-    if (!e.sc && scHas()) { const h = new Set(); is.forEach(x => (REF.scIssn.get(x) || []).forEach(i => h.add(i))); if (h.size) e.sc = scRec([...h][0]); }
+    if (!e.sj) { const h = new Set(); is.forEach(x => (REF.sjIssn.get(x) || []).forEach(i => h.add(i))); if (h.size === 1) e.sj = sjRec([...h][0]); else if (h.size > 1) e.notes.push('в SCImago несколько изданий с этим ISSN — квартиль не определён, уточните издание'); }
+    if (!e.wl) { const h = new Set(); is.forEach(x => (REF.wlIssn.get(x) || []).forEach(i => h.add(i))); if (h.size === 1) e.wl = wlRec([...h][0]); else if (h.size > 1) e.notes.push('в Белом списке несколько изданий с этим ISSN — уровень не определён, уточните издание'); }
+    if (!e.sc && scHas()) { const h = new Set(); is.forEach(x => (REF.scIssn.get(x) || []).forEach(i => h.add(i))); if (h.size === 1) e.sc = scRec([...h][0]); else if (h.size > 1) e.notes.push('в Scopus несколько изданий с этим ISSN — статус не определён, уточните издание'); }
     if (!e.cs) e.cs = findCs([e.sj && e.sj.sid, e.sc && e.sc.id], is);
   }
   e.issns = [...e.issns]; e.title = (e.sj && e.sj.title) || (e.wl && e.wl.title.split(' | ')[0]) || (e.sc && e.sc.title) || (e.cs && e.cs.title) || '';
@@ -973,7 +974,7 @@ function findJournalQuery(q) {
   // уверенно: по ISSN; или лучшее совпадение названия от 0,85 и заметно лучше следующего (на 0,1)
   if (top && top.how === 'title' && out.hits.filter(h => h.how === 'title').length === 1) out.sure = top;  // название совпало точно и только у одного
   else if (top && (top.how === 'issn' || (top.score >= 0.85 && !(out.hits[1] && out.hits[1].score > top.score - 0.1)))) out.sure = top;
-  if (top && top.how === 'issn' && out.hits.filter(h => h.how === 'issn').length > 1) out.sure = null;
+  if (top && top.how === 'issn' && (out.hits.filter(h => h.how === 'issn').length > 1 || top.e.notes.some(n => /несколько изданий/.test(n)))) out.sure = null;
   return out;
 }
 /* Сведения об издании на год (год необязателен) — для показа и выгрузки */
@@ -1074,8 +1075,10 @@ function hirschSummary(oaVals, pasted) {
   const warns = [];
   ['openalex', 'scopus', 'wos', 'rinc', 'gs'].forEach(b => { const vs = vals.filter(x => x.base === b); const u = [...new Set(vs.map(x => x.v))]; if (u.length > 1) warns.push(`${H_BASE_NAME[b]}: несколько значений (${vs.map(x => x.v + (x.id ? ' — профиль ' + x.id : '')).join(', ')}) — ${b === 'scopus' ? 'в Scopus несколько профилей автора' : 'несколько профилей'}, взято наибольшее; проверьте`); });
   vals.filter(x => x.nameOk === false).forEach(x => warns.push(`на странице ${H_BASE_NAME[x.base]} не найдена фамилия автора — проверьте, тот ли это профиль`));
-  const best = vals.slice().sort((a, b) => b.v - a.v)[0] || null;
-  const perBase = {}; vals.forEach(x => { if (!perBase[x.base] || perBase[x.base].v < x.v) perBase[x.base] = x; });
+  // Явное несовпадение фамилии: число остаётся в списке с предупреждением, но не участвует в выборе максимума.
+  const verified = vals.filter(x => x.nameOk !== false);
+  const best = verified.slice().sort((a, b) => b.v - a.v)[0] || null;
+  const perBase = {}; verified.forEach(x => { if (!perBase[x.base] || perBase[x.base].v < x.v) perBase[x.base] = x; });
   return { vals, best, perBase, warns };
 }
 
@@ -1397,15 +1400,20 @@ async function authorWorks(who, yearFrom) {
   if (NET.useOA) {
     try {
       let cursor = '*', n = 0;
-      while (cursor && n < 10) {
+      while (cursor && n < 20) {
         const f = who.ids && who.ids.length ? 'author.id:' + who.ids.join('|') : 'author.orcid:' + orcid;
-        const j = await getJson(`${NET.openalex}/works?filter=${f},type:article|review&sort=publication_year:desc&per-page=200&cursor=${encodeURIComponent(cursor)}&select=id,doi,title,publication_year,type,primary_location,authorships${oaParam()}`, 1);
+        const j = await getJson(`${NET.openalex}/works?filter=${f},type:article|review&sort=publication_year:desc&per-page=100&cursor=${encodeURIComponent(cursor)}&select=id,doi,title,publication_year,type,primary_location,authorships${oaParam()}`, 1);
         if (!j) break;
         for (const w of j.results || []) { const s = w.primary_location && w.primary_location.source; out.works.push({ oaId: w.id ? String(w.id).split('/').pop() : '', doi: (w.doi || '').replace(/^https?:\/\/doi\.org\//, '').toLowerCase(), title: w.title || '', year: w.publication_year, type: w.type, journal: s ? s.display_name : '', issns: s && s.issn ? s.issn : [], srcType: s ? s.type : '', authors: (w.authorships || []).map(oaShip) }); }
         cursor = j.meta && j.meta.next_cursor && (j.results || []).length ? j.meta.next_cursor : null; n++;
       }
-      out.capped = !!cursor; out.source = 'OpenAlex'; return out;
-    } catch (e) { out.err = 'OpenAlex: ' + e.message; out.works = []; }
+      out.capped = !!cursor; out.partial = out.capped; if (out.capped) out.err = 'OpenAlex: достигнут предел 2000 записей; поиск неполный'; out.source = 'OpenAlex'; return out;
+    } catch (e) {
+      out.err = 'OpenAlex: ' + e.message;
+      // Не теряем уже найденные записи, когда следующая страница не загрузилась.
+      // Возвращаем частичный список только с явным предупреждением о неполноте.
+      if (out.works.length) { out.source = 'OpenAlex'; out.partial = true; return out; }
+    }
   }
   if (!orcid) { const er = new Error(out.err || 'OpenAlex выключен, а без ORCID профиль взять негде'); throw er; }
   const j = await getJson(`${NET.crossref}/works?filter=orcid:${orcid},type:journal-article&rows=1000&select=${CR_SELECT}`);
@@ -1523,11 +1531,20 @@ async function readLines(w, cv, psm) {
 }
 /* Снимок увеличивается до ширины не меньше 2400 точек: мелкий текст иначе не читается.
    Затем предобработка (правка 4, 0.7.11): серый по минимуму каналов, растяжение контраста, повышение резкости, чёрно-белое по Otsu. */
-async function toCanvas(blob, raw) {
+async function toCanvas(blob, raw, early) {
   const bmp = await createImageBitmap(blob); const k = Math.min(4, Math.max(1, 2400 / bmp.width));
   const cv = document.createElement('canvas'); cv.width = Math.round(bmp.width * k); cv.height = Math.round(bmp.height * k);
-  const cx = cv.getContext('2d', { willReadFrequently: true }); cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height); cx.imageSmoothingQuality = 'high'; cx.drawImage(bmp, 0, 0, cv.width, cv.height);
-  if (!raw) preprocess(cx, cv.width, cv.height);
+  // Для второго прохода по мелким снимкам очищаем пиксели до увеличения:
+  // иначе JPEG-артефакты могут сливаться с тонкими штрихами заголовков.
+  let source = bmp;
+  if (early && !raw && bmp.width < 800) {
+    const native = document.createElement('canvas'); native.width = bmp.width; native.height = bmp.height;
+    const nc = native.getContext('2d', { willReadFrequently: true });
+    nc.fillStyle = '#fff'; nc.fillRect(0, 0, native.width, native.height); nc.drawImage(bmp, 0, 0);
+    preprocess(nc, native.width, native.height); source = native;
+  }
+  const cx = cv.getContext('2d', { willReadFrequently: true }); cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height); cx.imageSmoothingQuality = 'high'; cx.drawImage(source, 0, 0, cv.width, cv.height);
+  if (!raw && source === bmp) preprocess(cx, cv.width, cv.height);
   return { cv, cx, small: bmp.width < 1200, width: bmp.width };
 }
 /* Синий и фиолетовый текст ссылок на светло-сером фоне (eLibrary) по яркости получается серым и тонет в фоне;
@@ -1568,6 +1585,40 @@ function findGrid(cx, W, H) {
   const spans = l => l.slice(0, -1).map((a, i) => [a[1] + 1, l[i + 1][0] - 1]).filter(s => s[1] - s[0] > 12);
   T = 150; return { rows: spans(hl), cols: spans(vl), dark };
 }
+/* Второй вариант предобработки может восстановить тонкий штрих заголовка,
+   но испортить обычный текст (например, строку патента). Поэтому соединяем
+   только полные группы заглавных кириллических строк, когда они заметно
+   полнее и почти совпадают по содержанию; остальные строки сохраняем. */
+function mergeCyrHeadlines(main, alternate) {
+  const a = main.split('\n'), b = alternate.split('\n');
+  const caps = t => {
+    const letters = t.match(/[А-Яа-яЁё]/g) || [];
+    return letters.length >= 5 && letters.filter(c => /[А-ЯЁ]/.test(c)).length / letters.length >= 0.90;
+  };
+  const groups = lines => {
+    const out = []; let start = -1;
+    lines.forEach((s, i) => { if (caps(s)) { if (start < 0) start = i; }
+      else if (start >= 0) { out.push([start, i]); start = -1; } });
+    if (start >= 0) out.push([start, lines.length]); return out;
+  };
+  const norm = x => x.replace(/[^А-ЯЁ]/gi, '').toUpperCase();
+  const orig = groups(a), alt = groups(b), changes = [];
+  for (let i = 0; i < Math.min(orig.length, alt.length); i++) {
+    const [x, y] = orig[i], [u, v] = alt[i];
+    const s = a.slice(x, y).join(' '), t = b.slice(u, v).join(' ');
+    const n = norm(s), m = norm(t);
+    // Сохраняем исходник, если второй вариант короче, содержит лишнюю
+    // пунктуацию либо относится к другой карточке/строке.
+    if (m.length <= n.length || m.length > n.length + 12 || /[!?]{1,}/.test(t) && !/[!?]{1,}/.test(s)) continue;
+    const common = Math.min(n.length, m.length), dist = typeof lev === 'function' ? lev(n, m, 12) : 13;
+    if (common < 15 || dist > 6 || dist / common > 0.06) continue;
+    changes.push([x, y, b.slice(u, v)]);
+  }
+  for (let i = changes.length - 1; i >= 0; i--) {
+    const [x, y, lines] = changes[i]; a.splice(x, y - x, ...lines);
+  }
+  return a.join('\n');
+}
 async function ocrImage(blob, raw) {
   const { cv, cx, small } = await toCanvas(blob, raw); const w = await getOcr(); const g = findGrid(cx, cv.width, cv.height);
   if (g && g.rows.length >= 1 && g.cols.length >= 3) {
@@ -1592,6 +1643,12 @@ async function ocrImage(blob, raw) {
     if (lines.length) { const text = lines.join('\n'); return { text, conf: nc ? Math.round(conf / nc) : 0, small, table: true, q: ocrQuality(text) }; }
   }
   const data = await readLines(w, cv, '3');
+  if (!raw && small && cv.width && isElibList(data.text)) {
+    const alt = await toCanvas(blob, false, true);
+    await w.rus.setParameters({ tessedit_pageseg_mode: '3' });
+    const { data: second } = await w.rus.recognize(alt.cv);
+    data.text = mergeCyrHeadlines(data.text, second.text);
+  }
   return { text: data.text, conf: Math.round(data.conf), small, table: false, q: ocrQuality(data.text) };
 }
 
@@ -1679,8 +1736,14 @@ function sortRows(rows, id, keyOf) {
 function download(name, blob) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); }
 const today = () => new Date().toISOString().slice(0, 10);
 const cellTxt = v => v == null ? '' : (typeof v === 'number' && !Number.isInteger(v) ? fmtNum(v) : String(v));
+/* CSV может быть открыт в Excel: внешние текстовые поля не должны выполняться как формулы. */
+const safeCsvText = v => {
+  const s = cellTxt(v);
+  if (typeof v === 'number') return s;
+  return /^[\s\u0000-\u001f]*[=+\-@]/u.test(s) || /^[\u0000-\u001f]/u.test(s) ? "'" + s : s;
+};
 function csvBlob(rows) {
-  const q = v => { const t = cellTxt(v).replace(/\r?\n/g, ' '); return /[";\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  const q = v => { const t = safeCsvText(v).replace(/\r?\n/g, ' '); return /[";\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
   return new Blob(['﻿' + rows.map(r => r.map(q).join(';')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
 }
 const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
@@ -2029,7 +2092,7 @@ function quartText(jv, sj, short, wl, issns) {
 function yearChips(sj, mark, last) {
   if (!sj || !sj.hist) return '';
   let ys = Object.keys(sj.hist).map(Number).sort((a, b) => a - b); if (last) ys = ys.slice(-last);
-  return '<div class="yrs">' + ys.map(y => `<span class="yq${y === mark ? ' pub' : ''}" title="${esc('SCImago ' + y + (sj.hist[y].cpd != null ? ', импакт-фактор ' + fmtNum(sj.hist[y].cpd) : ''))}"><span class="y">${y}</span><b>${sj.hist[y].q ? 'Q' + sj.hist[y].q : '—'}</b></span>`).join('') + '</div>';
+  return '<div class="yrs">' + ys.map(y => `<span class="yq${y === mark ? ' pub' : ''}" title="${esc('SCImago ' + y + (sj.hist[y].cpd != null ? ', цитирований на документ (2 года): ' + fmtNum(sj.hist[y].cpd) : ''))}"><span class="y">${y}</span><b>${sj.hist[y].q ? 'Q' + sj.hist[y].q : '—'}</b></span>`).join('') + '</div>';
 }
 /* CiteScore Scopus (0.9, правка 6): число — ссылка на страницу издания в Scopus, подпись Elsevier — в подсказке.
    Отдельный показатель за последний год («сейчас»); квартиль SCImago не заменяет. */
@@ -2115,8 +2178,8 @@ function filterBar(id, shown, total, noCpd) {
   const active = f.q.length || f.wl.length || f.yFrom || f.yTo || f.corr.length || f.ifFrom;
   const pre = (k, t) => `<button class="preset${presetOn(f, k) ? ' on' : ''}" onclick="setPreset('${id}','${k}')" title="квартиль SCImago и уровень Белого списка — на год публикации; CiteScore не учитывается. Ещё нажатие — снять">${t}</button>`;
   return `<div class="fbar noprint"><div class="fr"><span class="grp"><span class="gl">Наборы</span>${pre('q12', 'Q1–Q2 или БС 1')}${pre('q1', 'Q1 или БС 1')}</span></div><div class="fr"><span class="grp"><span class="gl">Квартиль</span>${['1', '2', '3', '4'].map(v => pill('q', v, 'Q' + v)).join('')}${pill('q', 'none', 'нет')}</span><span class="or">или</span><span class="grp"><span class="gl">Белый список</span>${['1', '2', '3', '4'].map(v => pill('wl', v, v)).join('')}${pill('wl', 'none', 'нет')}${pill('wl', 'excl', 'исключён')}</span>`
-    + `<span class="fright"><span class="cnt">Показано <b>${shown}</b> из ${total}${f.ifFrom && noCpd ? ` · без импакт-фактора (нет в SCImago) скрыто ${noCpd}` : ''}</span>${active ? `<button class="linkbtn" onclick="resetFlt('${id}')">Сбросить</button>` : ''}<details class="fhelp"><summary title="Как работает фильтр">?</summary><div>Квартиль, уровень и импакт-фактор — на год публикации. Отмеченные квартили и уровни объединяются через «или» («Q1» + «1» — статьи, у которых Q1 или 1 уровень Белого списка); годы, импакт-фактор и corresponding — дополнительные условия «и». Импакт-фактор здесь — «цитирований на документ за 2 года» SCImago, это не импакт-фактор WoS.${corrOff ? ' Фильтр corresponding в этой таблице заработает, когда найден автор (раздел 2).' : ''}</div></details></span></div>`
-    + `<div class="fr"><span class="grp"><span class="gl">Годы</span>${num('yFrom', 'с')} – ${num('yTo', 'по')}</span><span class="grp"><span class="gl">Импакт-фактор от</span>${num('ifFrom', 'любой', '0.1')}</span><span class="grp"><span class="gl">Corresponding</span>${pill('corr', 'yes', 'да', corrOff)}${pill('corr', 'no', 'нет', corrOff)}${pill('corr', 'unk', 'не указан', corrOff)}</span>`
+    + `<span class="fright"><span class="cnt">Показано <b>${shown}</b> из ${total}${f.ifFrom && noCpd ? ` · без показателя цитируемости SCImago скрыто ${noCpd}` : ''}</span>${active ? `<button class="linkbtn" onclick="resetFlt('${id}')">Сбросить</button>` : ''}<details class="fhelp"><summary title="Как работает фильтр">?</summary><div>Квартиль, уровень и цитирования на документ (2 года) — на год публикации. Отмеченные квартили и уровни объединяются через «или» («Q1» + «1» — статьи, у которых Q1 или 1 уровень Белого списка); годы, показатель цитируемости и corresponding — дополнительные условия «и». Это «цитирований на документ (2 года)» SCImago, а не JIF Clarivate/JCR.${corrOff ? ' Фильтр corresponding в этой таблице заработает, когда найден автор (раздел 2).' : ''}</div></details></span></div>`
+    + `<div class="fr"><span class="grp"><span class="gl">Годы</span>${num('yFrom', 'с')} – ${num('yTo', 'по')}</span><span class="grp"><span class="gl">Цитирований/док. (2 года) от</span>${num('ifFrom', 'любой', '0.1')}</span><span class="grp"><span class="gl">Corresponding</span>${pill('corr', 'yes', 'да', corrOff)}${pill('corr', 'no', 'нет', corrOff)}${pill('corr', 'unk', 'не указан', corrOff)}</span>`
     + `</div></div>`;
 }
 /* 0.9, правка 4: кнопки-наборы фильтра. Выставляют только квартиль и уровень Белого списка (они объединяются через «или»);
@@ -2404,7 +2467,7 @@ function authorBody(S, k, fid, withFilter) {
   if (prof && prof.err) h += `<p>${chip('unk', 'не загружено')} ${esc(prof.err)}</p>`;
   else if (prof) {
     const all = prof.js, rows = profRows(S, fid), cnt = q => rows.filter(x => x.j.sj && x.jv.qY === q).length, wl1 = rows.filter(x => rowKey(x.w.year, x.j, x.jv).wl === 1).length, cy = rows.filter(x => x.corrSt === 'yes').length;
-    h += `<p>Источник — ${prof.aw.source}. Статей и обзоров за все годы: <b>${all.length}</b>.` + (prof.aw.capped ? ' Показаны первые 2000 — список обрезан.' : '') + '</p>';
+    h += `<p>Источник — ${prof.aw.source}. Найдено статей и обзоров: <b>${all.length}</b>.` + (prof.aw.capped ? ' Достигнут предел 2000 записей — список неполный.' : '') + (prof.aw.partial && !prof.aw.capped ? ' Список неполный: не все страницы получены.' : '') + (prof.aw.err ? ' Причина: ' + esc(prof.aw.err) + '.' : '') + (!prof.aw.partial ? ' Поиск по доступным записям базы, полнота не гарантируется.' : '') + '</p>';
     if (k < 0 && W.entries) { const miss = W.pubs.filter(p => p.work && p.work.doi && TYPE_OK[p.work.type] && !all.some(x => x.w.doi === p.work.doi)); if (miss.length) h += `<p>${chip('check', 'проверьте')} В профиле автора нет ${miss.length} из найденных статей списка (№ ${miss.map(p => numOf(p.entry, W.pubs.indexOf(p))).join(', ')}): профиль в базе неполный либо это другой автор.</p>`; }
     if (withFilter) h += filterBar(fid, rows.length, all.length, noCpdHidden(all.map(profKey), FLT[fid]));
     h += `<div class="sum" title="по показанным строкам; квартиль и уровень — на год публикации">${[['Q1', cnt(1)], ['Q2', cnt(2)], ['Q3', cnt(3)], ['Q4', cnt(4)], ['без квартиля', rows.filter(x => !x.j.sj || !x.jv.qY).length], ['БС 1', wl1], ['corresponding', cy]].map(([t, n]) => `<span class="sb"><b>${n}</b> ${t}</span>`).join('')}</div>`;
@@ -2449,14 +2512,14 @@ const csHead = () => csHas() ? ['CiteScore (Scopus ' + REF.csYear + ', сейч�
 const csCols = cs => !csHas() ? [] : (!cs ? ['', '', '', ''] : [cs.v != null ? cs.v : '', cs.q ? 'Q' + cs.q : '', cs.best ? cs.best.name + ' (' + cs.best.pct + ')' : '', csSrc(cs) + ' — ' + csLink(cs)]);
 /* Таблица для копирования и выгрузки файлом: числа — числами (Excel сам покажет их по-русски) */
 function listTable() {
-  const ids = auIds().length; const L = [['№', 'Проверено', 'Найденная статья', 'Ссылка', 'Год', 'Тип', 'Издание', 'ISSN', 'Квартиль (год публикации)', 'Квартиль сейчас (' + REF.sjYear + ')', 'Индексация (Белый список)', 'Белый список (год публикации)', 'Импакт-фактор (SCImago, цит. на документ за 2 года)', 'Импакт-фактор в списке', 'Квартиль в списке', 'Scopus (список источников)'].concat(csHead()).concat(['Corresponding (OpenAlex)']).concat(ids ? ['Найденный автор — corresponding', 'Организация автора'] : []).concat(['Первый автор', 'Последний автор', 'Примечания', 'Запись из списка'])];
+  const ids = auIds().length; const L = [['№', 'Проверено', 'Найденная статья', 'Ссылка', 'Год', 'Тип', 'Издание', 'ISSN', 'Квартиль (год публикации)', 'Квартиль сейчас (' + REF.sjYear + ')', 'Индексация (Белый список)', 'Белый список (год публикации)', 'Цитирований на документ (2 года), SCImago', 'Заявленный импакт-фактор в списке', 'Квартиль в списке', 'Scopus (список источников)'].concat(csHead()).concat(['Corresponding (OpenAlex)']).concat(ids ? ['Найденный автор — corresponding', 'Организация автора'] : []).concat(['Первый автор', 'Последний автор', 'Примечания', 'Запись из списка'])];
   listRows().forEach(({ p, i }) => { const w = p.work, jv = p.jv || {}, a = w ? w.authors : [], m = w ? listMe(w) : null, num = numOf(p.entry, i);
     L.push([typeof num === 'number' ? num : String(num), markS(markKeyL(p)), w ? w.title : (p.found === 'patent' ? 'патент — не ищется' : (p.found === 'no' ? 'не найдена' : 'не проверена')), w ? wLink(w) : (p.entry.patentNo ? 'https://patents.google.com/patent/' + p.entry.patentNo : ''), w ? w.year : '', w ? p.typeName : (p.found === 'patent' ? 'патент' : ''), w ? w.journal : '', w ? w.issns.join(', ') : '', w && p.j.sj ? (jv.qY ? 'Q' + jv.qY : 'нет') + ' (' + jv.sjYear + ')' : '', w && p.j.sj && jv.qL ? 'Q' + jv.qL : '', w ? idxS(p.j.wl) : '', w ? wlS(p.j.wl, w.year) : '', w && jv.cpd != null ? Math.round(jv.cpd * 100) / 100 : '', p.declIF != null ? p.declIF : '', p.declQ ? 'Q' + p.declQ : '', w ? scS(p.j.sc, w.year) : ''].concat(csCols(w ? p.j.cs : null)).concat([w ? corrS(w) : '']).concat(ids ? [m && m.me ? CORR_T[m.corr] : 'нет данных', m && m.me ? orgS(m.me) : ''] : []).concat([aName(a[0]), a.length > 1 ? aName(a[a.length - 1]) : '', p.notes.concat(dupNotes(i)).join('; '), p.entry.raw])); });
   return L;
 }
 function copyList() { if (!W.entries) return; toClip(listTable().map(r => tsvRow(r.map(cellTxt))).join('\n'), 'status'); }
 function exportList(kind) { if (!W.entries) return; const t = listTable(), nm = 'Публикации_из_списка_' + today(); download(nm + '.' + kind, kind === 'xlsx' ? xlsxBlob('Публикации из списка', t) : csvBlob(t)); $('status').textContent = 'Файл ' + nm + '.' + kind + ' сохранён в папку загрузок.'; }
-const profHead = () => ['Год', 'Проверено', 'Статья', 'Ссылка', 'Издание', 'Квартиль (год публикации)', 'Квартиль сейчас (' + REF.sjYear + ')', 'Белый список (год публикации)', 'Импакт-фактор (SCImago)'].concat(csHead()).concat(['Место автора', 'Corresponding', 'Организация автора в статье']);
+const profHead = () => ['Год', 'Проверено', 'Статья', 'Ссылка', 'Издание', 'Квартиль (год публикации)', 'Квартиль сейчас (' + REF.sjYear + ')', 'Белый список (год публикации)', 'Цитирований на документ (2 года), SCImago'].concat(csHead()).concat(['Место автора', 'Corresponding', 'Организация автора в статье']);
 const profLine = x => [x.w.year, markS(markKeyA(x)), x.w.title, wLink(x.w), x.w.journal, x.j.sj ? (x.jv.qY ? 'Q' + x.jv.qY : 'нет') + ' (' + x.jv.sjYear + ')' : '', x.j.sj && x.jv.qL ? 'Q' + x.jv.qL : '', wlS(x.j.wl, x.w.year), x.jv.cpd != null ? Math.round(x.jv.cpd * 100) / 100 : ''].concat(csCols(x.j.cs)).concat([x.pos || '', x.corrSt ? CORR_T[x.corrSt] + (x.corrSt === 'no' && x.corrNames.length ? ' (' + x.corrNames.join(', ') + ')' : '') : 'нет данных', orgS(x.me)]);
 function authorTable() { const sum = hirschSummary(AU.prof.info.filter(a => a.h != null).map(a => ({ h: a.h, id: a.id })), AU.hx || []); const hs = sum.vals.map(x => H_BASE_NAME[x.base] + (x.base === 'openalex' ? ' (свой расчёт)' : '') + ': ' + x.v).join('; '); return [['Автор', AU.prof.info.map(a => a.name).join('; '), AU.prof.info.map(a => 'https://openalex.org/' + a.id).join(' '), hs ? 'Индекс Хирша — ' + hs + (sum.best ? '; наибольший — ' + sum.best.v + ' (' + H_BASE_NAME[sum.best.base] + ')' : '') : ''], profHead()].concat(aRows().map(profLine)); }
 function copyAuthor() { if (!AU.prof || AU.prof.err) return; toClip(authorTable().map(r => tsvRow(r.map(cellTxt))).join('\n'), 'astatus'); }
@@ -2542,8 +2605,8 @@ function journalSheet(e, year, head, notes) {
   if (sj) {
     const nowDiff = f.qNowYear !== f.qYear;
     h += `<div><div class="cap">Квартиль SCImago ${f.qYear}</div>${big(f.q ? 'Q' + f.q : '—', (year && !f.qExact ? `за ${year} данных нет — взят ${f.qYear}` : '') + (nowDiff ? `${year && !f.qExact ? '<br>' : ''}сейчас (${f.qNowYear}): ${f.qNow !== f.q ? chip('check', qS(f.qNow)) : qS(f.qNow)}` : (year ? '' : 'сейчас')))}</div>`;
-    h += `<div><div class="cap">Импакт-фактор</div>${f.cpd != null ? big(fmtNum(f.cpd), `цит. на документ SCImago, ${f.qYear}` + (nowDiff && f.cpdNow != null ? `<br>сейчас (${f.qNowYear}): ${fmtNum(f.cpdNow)}` : '')) : big('—', 'нет данных', 't')}</div>`;
-  } else h += `<div><div class="cap">Квартиль SCImago</div>${big(chip('unk', 'нет в SCImago'), e.sc || e.cs ? 'в Scopus есть, квартиля SCImago нет' : '', 't')}</div><div><div class="cap">Импакт-фактор</div>${big('—', 'нет в SCImago', 't')}</div>`;
+    h += `<div><div class="cap">Цитирований на документ (2 года)</div>${f.cpd != null ? big(fmtNum(f.cpd), `цит. на документ SCImago, ${f.qYear}` + (nowDiff && f.cpdNow != null ? `<br>сейчас (${f.qNowYear}): ${fmtNum(f.cpdNow)}` : '')) : big('—', 'нет данных', 't')}</div>`;
+  } else h += `<div><div class="cap">Квартиль SCImago</div>${big(chip('unk', 'нет в SCImago'), e.sc || e.cs ? 'в Scopus есть, квартиля SCImago нет' : '', 't')}</div><div><div class="cap">Цитирований на документ (2 года)</div>${big('—', 'нет в SCImago', 't')}</div>`;
   if (wl) { const a = wlAt(wl, year || null); h += `<div><div class="cap">Белый список${year ? ' ' + year : ''}</div>${a.excluded ? big(chip('check', 'исключён ' + wl.disc), '', 't') : big(a.lv || '—', (a.lv ? 'уровень' : 'без уровня') + (a.y ? ` (${a.y})` : '') + (!a.excluded && (a.curExcl || a.cur !== a.lv) ? '<br>' + chip('check', a.curExcl ? 'сейчас исключён ' + wl.disc : 'сейчас ' + (a.cur ? 'уровень ' + a.cur : 'без уровня')) : ''))}</div>`; }
   else h += `<div><div class="cap">Белый список</div>${big('нет', 'нет в списке', 't')}</div>`;
   h += `<div><div class="cap">Квартиль SCImago по годам</div>${sj ? yearChips(sj, year || null, 6) + (Object.keys(sj.hist).length > 6 ? `<details class="mini"><summary>все годы</summary>${yearChips(sj, year || null, 0)}</details>` : '') + catsHtml(f.cats) : '<span class="dim">нет данных</span>'}</div>`;
@@ -2567,7 +2630,7 @@ function renderJournals() {
   el.innerHTML = h; $('jOut').style.display = '';
 }
 function journalTable() {
-  const y = JR.year, L = [['Запрос', 'Издание', 'ISSN', 'Квартиль SCImago' + (y ? ' (' + y + ')' : ''), 'Год квартиля', 'Квартиль сейчас (' + REF.sjYear + ')', 'Импакт-фактор (SCImago, цит. на документ за 2 года)', 'Белый список' + (y ? ' (' + y + ')' : ''), 'Индексация (Белый список)', 'Scopus (список источников)'].concat(csHead()).concat(['Ссылка SCImago', 'Примечания'])];
+  const y = JR.year, L = [['Запрос', 'Издание', 'ISSN', 'Квартиль SCImago' + (y ? ' (' + y + ')' : ''), 'Год квартиля', 'Квартиль сейчас (' + REF.sjYear + ')', 'Цитирований на документ (2 года), SCImago', 'Белый список' + (y ? ' (' + y + ')' : ''), 'Индексация (Белый список)', 'Scopus (список источников)'].concat(csHead()).concat(['Ссылка SCImago', 'Примечания'])];
   JR.rows.forEach(r => {
     if (r.pick == null) { L.push([r.q, r.res.hits.length ? 'не выбран: ' + r.res.hits.map(x => x.e.title).join('; ') : 'не найдено в справочниках']); return; }
     const hit = r.res.hits[r.pick], e = hit.e, f = journalFacts(e, y);
@@ -2750,7 +2813,7 @@ function initJsug() {
 /* ----- Источники данных: в «Источники данных» на главной и строкой внизу подстраницы ----- */
 function sourcesList() {
   if (!REF) return [];
-  return [`Квартиль и импакт-фактор («цитирований на документ за 2 года») — SCImago Journal & Country Rank, ${REF.sjYears[0]}–${REF.sjYear}.`,
+  return [`Квартиль и показатель «цитирований на документ (2 года)» — SCImago Journal & Country Rank, ${REF.sjYears[0]}–${REF.sjYear}. Это не JIF от Clarivate/JCR.`,
     `Белый список — справочник на ${REF.wlDate}; свежий уровень — с сайта Белого списка (journalrank.rcsi.science).`,
     scHas() ? `Индексация в Scopus — Scopus Source List, ${REF.scDate}.` : '',
     csHas() ? `CiteScore, процентиль и квартиль Scopus — ${csSrc(null)}; ссылка у каждого значения ведёт на страницу издания в Scopus.` : '',
