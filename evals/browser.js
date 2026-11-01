@@ -75,7 +75,16 @@ const AID = { Sokolova: 'A1', Orlov: 'A2', Lebedev: 'A3' }, ANAME = { A1: 'Anna 
     });
   };
   await mock();
-  const URL0 = 'file://' + B + '/dist/' + encodeURIComponent(fs.readdirSync(B + '/dist').filter(f => f.endsWith('.html'))[0]);
+  // CI: тот же автономный HTML по localhost, поскольку новые Chromium ограничивают localStorage для file://.
+  // Без PC_TEST_HTTP прежний штатный file:// сценарий не меняется.
+  const oneFile = fs.readdirSync(B + '/dist').filter(f => f.endsWith('.html'))[0];
+  const singleSrv = process.env.PC_TEST_HTTP === '1' ? require('http').createServer((req, res) => {
+    if (req.url.split('?')[0] !== '/') { res.writeHead(404); return res.end(); }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    fs.createReadStream(B + '/dist/' + oneFile).pipe(res);
+  }) : null;
+  if (singleSrv) await new Promise(ok => singleSrv.listen(8766, '127.0.0.1', ok));
+  const URL0 = singleSrv ? 'http://127.0.0.1:8766/' : 'file://' + B + '/dist/' + encodeURIComponent(oneFile);
   const idle = () => pg.waitForFunction(() => !BUSY, null, { timeout: 60000 });
   const listState = () => pg.evaluate(() => ({ n: W.pubs.length, found: W.pubs.map(p => p.found), q: W.pubs.map(p => p.jv ? [p.jv.qY, p.jv.sjYear] : null) }));
   const auState = () => pg.evaluate(() => ({ loaded: !!(AU.prof && !AU.prof.err), n: AU.prof && AU.prof.js ? AU.prof.js.length : 0, how: AU.prof && AU.prof.how, cands: AU.cands ? AU.cands.length : null, msgs: AU.msgs, name: AU.prof && AU.prof.info && AU.prof.info[0] && AU.prof.info[0].name }));
@@ -120,7 +129,8 @@ const AID = { Sokolova: 'A1', Orlov: 'A2', Lebedev: 'A3' }, ANAME = { A1: 'Anna 
       const y = await pg.evaluate(() => document.getElementById('outList').getBoundingClientRect().top + scrollY);
       await pg.screenshot({ path: process.env.VDIR + '/tab_' + v + '.png', clip: { x: 0, y: y - 10, width: 1500, height: 560 }, fullPage: true });
     }
-    await br.close(); process.exit(0);
+    await br.close();
+  if (singleSrv) await new Promise(ok => singleSrv.close(ok)); process.exit(0);
   }
   // 2. фильтры (ожидания: список — Nature Q1/БС1, PRB Q1/БС1, Nano Letters Q1/БС1 (2019 → уровень 2023), доклад — без квартиля и вне БС, ЖТФ 2024 — нет в SCImago, БС ур. 2 (сейчас 1), шестая не найдена)
   const shownList = () => pg.evaluate(() => listRows().map(r => r.i + 1));
@@ -369,7 +379,7 @@ const AID = { Sokolova: 'A1', Orlov: 'A2', Lebedev: 'A3' }, ANAME = { A1: 'Anna 
   { const pe = await br.newPage({ viewport: { width: 684, height: 400 }, deviceScaleFactor: 1 }); await pe.setContent(ELIB_HTML); const fe = B + '/evals/elib.jpg'; await (await pe.$('div')).screenshot({ path: fe, type: 'jpeg', quality: 45 });
     await pe.setContent('<div style="width:420px;padding:4px;background:#d8d8d8;font:5px Arial;color:#9a9a9a;filter:blur(0.6px)">' + 'Ѫ ҂ ₰ ꙮ ≋ ⁂ ※ ⸎ ⌘ '.repeat(60) + '</div>'); const fg = B + '/evals/garbage.jpg'; await (await pe.$('div')).screenshot({ path: fg, type: 'jpeg', quality: 15 }); await pe.close();
     await pg.fill('#list', ''); await pg.setInputFiles('#file', fe); await pg.waitForFunction(() => !BUSY && /распознан|плохо/.test(document.getElementById('ocrmsg').textContent + document.getElementById('ocrwarn').textContent), null, { timeout: 180000 });
-    const el = await pg.evaluate(() => { const t = document.getElementById('list').value, E = splitEntries(t); return { warn: document.getElementById('ocrwarn').innerText, msg: document.getElementById('ocrmsg').innerText, n: E.length, site: E[0] && E[0].site, pat: E.map(e => !!e.patent).join(), q1: E[0] && E[0].query, en: /THERMAL STABILITY OF LAYERED/.test(t), ru: /НАНОСТРУКТУРИРОВАННЫХ/.test(t) }; });
+    const el = await pg.evaluate(() => { const t = document.getElementById('list').value, E = splitEntries(t); return { warn: document.getElementById('ocrwarn').innerText, msg: document.getElementById('ocrmsg').innerText, n: E.length, site: E[0] && E[0].site, pat: E.map(e => !!e.patent).join(), q1: E[0] && E[0].query, en: /THERMAL STABILITY OF LAYERED/.test(t), ru: /НАНОСТРУКТУРИРОВАННЫХ/.test(t), sample: t.slice(0, 1200) }; });
     console.log('  снимок eLibrary:', JSON.stringify(el).slice(0, 400));
     T('0.7.11 снимок eLibrary 684 точки: распознан без предупреждения, 4 записи, разбор eLibrary, четвёртая — патент', !el.warn && el.n === 4 && el.site === 'elibrary' && el.pat === 'false,false,false,true', el);
     T('0.7.11 снимок eLibrary: заголовки синим и фиолетовым прочитаны (русский и английский), в запрос записи 1 не попал сборник', el.en && el.ru && el.q1 && !/Материалы|конференции/.test(el.q1), el);
