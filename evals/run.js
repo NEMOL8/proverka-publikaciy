@@ -696,5 +696,20 @@ eq('транслит / несколько написаний фамилии', A.
     eq('0.9.1 / CSV: сериализация защищает формулу, не меняет число и отделяет строки',
       [csv.includes("'=1+1;2"), csv.includes('Nature;-3'), csv.includes('\r\n')], [true,true,true]);
   }
+  // Независимые регрессионные проверки OCR: общий разрыв первой буквы, без словаря конкретных названий.
+  {
+    const O = new Function(fs.readFileSync(B + '/src/ocr.js', 'utf8') + '\nreturn {repairOcrHeadlineSpacing};')();
+    eq('0.9.2 OCR: склеивает ошибочно разделённую букву в заголовке',
+      O.repairOcrHeadlineSpacing('THERMAL STABILITY OF L AYERED COMPOSITE COATINGS'), 'THERMAL STABILITY OF LAYERED COMPOSITE COATINGS');
+    eq('0.9.2 OCR: сохраняет артикль A и термин B CELLS',
+      O.repairOcrHeadlineSpacing('THERMAL STABILITY OF A COMPOSITE AND B CELLS'), 'THERMAL STABILITY OF A COMPOSITE AND B CELLS');
+    eq('0.9.2 OCR: сохраняет X RAY и обычную смешанную запись',
+      [O.repairOcrHeadlineSpacing('THERMAL STABILITY OF X RAY DIFFRACTION'),
+       O.repairOcrHeadlineSpacing('Ivanov I. The X AXIS was shown')],
+      ['THERMAL STABILITY OF X RAY DIFFRACTION', 'Ivanov I. The X AXIS was shown']);
+    eq('0.9.2 OCR: кириллические заголовки не меняет',
+      O.repairOcrHeadlineSpacing('СИНТЕЗ Н АНОСТРУКТУРИРОВАННЫХ ПОКРЫТИЙ'),
+      'СИНТЕЗ Н АНОСТРУКТУРИРОВАННЫХ ПОКРЫТИЙ');
+  }
   console.log(`Пройдено ${pass} из ${pass + fail}`); fails.forEach(f => console.log('  НЕ ПРОЙДЕНО — ' + f)); process.exit(fail ? 1 : 0);
 })();

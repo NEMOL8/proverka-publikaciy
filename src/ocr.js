@@ -143,6 +143,17 @@ function mergeCyrHeadlines(main, alternate) {
   }
   return a.join('\n');
 }
+/* OCR иногда отделяет первую согласную от слова в английском заголовке (L AYERED).
+   Исправляем только строки в верхнем регистре и только перед длинной последовательностью с гласной;
+   не склеиваем артикль A, местоимение I, X RAY, B CELLS и обычные библиографические строки. */
+function repairOcrHeadlineSpacing(text) {
+  return String(text || '').split('\n').map(line => {
+    const letters = line.match(/[A-Za-z]/g) || [];
+    if (letters.length < 18 || letters.filter(c => /[A-Z]/.test(c)).length / letters.length < 0.9) return line;
+    return line.replace(/(^|[^A-Za-z])([B-HJ-WYZ]) ([AEIOU][A-Z]{3,})(?=$|[^A-Za-z])/g,
+      (_, before, head, tail) => before + head + tail);
+  }).join('\n');
+}
 async function ocrImage(blob, raw) {
   const { cv, cx, small } = await toCanvas(blob, raw); const w = await getOcr(); const g = findGrid(cx, cv.width, cv.height);
   if (g && g.rows.length >= 1 && g.cols.length >= 3) {
@@ -173,6 +184,7 @@ async function ocrImage(blob, raw) {
     const { data: second } = await w.rus.recognize(alt.cv);
     data.text = mergeCyrHeadlines(data.text, second.text);
   }
+  data.text = repairOcrHeadlineSpacing(data.text);
   return { text: data.text, conf: Math.round(data.conf), small, table: false, q: ocrQuality(data.text) };
 }
 
