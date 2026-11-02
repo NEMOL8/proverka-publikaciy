@@ -10,8 +10,10 @@ ver=re.search(r"VERSION = '([^']+)'",open(B+'src/core.js',encoding='utf-8').read
 # Сам файл в исходники и в текст проекта не входит.
 TOK=open(B+'orcid_token.txt',encoding='utf-8').read().strip() if os.path.exists(B+'orcid_token.txt') else ''
 if TOK and not re.fullmatch(r'[0-9a-fA-F-]{20,64}',TOK): sys.exit('orcid_token.txt: токен не похож на токен ORCID')
-OAK=open(B+'openalex_key.txt',encoding='utf-8').read().strip() if os.path.exists(B+'openalex_key.txt') else ''
-if OAK and not re.fullmatch(r'[A-Za-z0-9_-]{8,128}',OAK): sys.exit('openalex_key.txt: ключ не похож на ключ OpenAlex')
+key_path=B+'openalex_key.txt'
+if not os.path.isfile(key_path): sys.exit('ОШИБКА СБОРКИ: отсутствует openalex_key.txt; сборка без ключа OpenAlex запрещена. Добавьте действующий ключ в файл (не коммитьте его).')
+OAK=open(key_path,encoding='utf-8').read().strip()
+if not re.fullmatch(r'[A-Za-z0-9_-]{8,128}',OAK): sys.exit('ОШИБКА СБОРКИ: openalex_key.txt пуст или ключ имеет неверный формат')
 app='const ORCID_BUILTIN = '+json.dumps(TOK)+', OA_BUILTIN = '+json.dumps(OAK)+';\n'+''.join(js(B+'src/'+f)+'\n' for f in ['subfields.js','core.js','extra.js','net.js','ocr.js','store.js','ui.js','ui8.js','ui9.js'])
 print('токен ORCID:', 'встроен' if TOK else 'нет', '; ключ OpenAlex:', 'встроен' if OAK else 'нет')
 tpl=open(B+'src/template.html',encoding='utf-8').read()
