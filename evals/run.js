@@ -2,7 +2,7 @@
 // Запуск: node evals/run.js
 const fs = require('fs'), path = require('path'); const B = path.join(__dirname, '..');
 const src = fs.readFileSync(B + '/src/core.js', 'utf8').replace(/if \(typeof module[^\n]*\n?$/m, '') + fs.readFileSync(B + '/src/net.js', 'utf8').replace(/if \(typeof module[^\n]*\n?$/m, '') + fs.readFileSync(B + '/src/extra.js', 'utf8').replace(/if \(typeof module[^\n]*\n?$/m, '');
-const A = new Function(src + '\nreturn {loadCs,findCs,csRec,csShort,loadSc,parseCoverage,scAt,findSc,findJournalQuery,journalFacts,titleSim,idFromOrcidItem,collectAuthorIds,parseHirschPage,hirschSummary,findDocRecords,declQuartile,orgHit,leaderByOrg,ocrQuality,isElibList,CACHE,cacheKey,judgePub,getJson,tfetch,PING_MS,corrOf,orgMatch,findDuplicates,instNames,oaShip,orcidExternalIds,ST,matchScore,findDoi,FOUND_OK,oaWork,oaSearchWorks,instRu,loadRef,findJournal,splitEntries,splitSiteEntries,detectSite,isUiLine,parseEntry,titleScore,canonName,leaderVariants,sameSurname,authorPosition,journalVerdict,judgePub,judgeProfileWork,detectLeader,parseAuthorInput,orcidValid,wlAt,passFilter,parseFIO,nameMatch,translitVariants,NET,crWork,findWork,enrichOA,enrichWL,authorInfo,searchAuthors,authorByOrcid,authorByScopus,orcidSearch,runSelfCheck,SELF,authorWorks,cleanOrcid,pingAll};')();
+const A = new Function(src + '\nreturn {crossMatch,loadCs,findCs,csRec,csShort,loadSc,parseCoverage,scAt,findSc,findJournalQuery,journalFacts,titleSim,idFromOrcidItem,collectAuthorIds,parseHirschPage,hirschSummary,findDocRecords,declQuartile,orgHit,leaderByOrg,ocrQuality,isElibList,CACHE,cacheKey,judgePub,getJson,tfetch,PING_MS,corrOf,orgMatch,findDuplicates,instNames,oaShip,orcidExternalIds,ST,matchScore,findDoi,FOUND_OK,oaWork,oaSearchWorks,instRu,loadRef,findJournal,splitEntries,splitSiteEntries,detectSite,isUiLine,parseEntry,titleScore,canonName,leaderVariants,sameSurname,authorPosition,journalVerdict,judgePub,judgeProfileWork,detectLeader,parseAuthorInput,orcidValid,wlAt,passFilter,parseFIO,nameMatch,translitVariants,NET,crWork,findWork,enrichOA,enrichWL,authorInfo,searchAuthors,authorByOrcid,authorByScopus,orcidSearch,runSelfCheck,SELF,authorWorks,cleanOrcid,pingAll};')();
 const DATA = JSON.parse(fs.readFileSync(B + '/data/ref.json', 'utf8'));
 // вымышленные издания для кейсов «квартиль по годам»: история задана за 2021–2025, более ранние годы справочника — пусто
 const fake = (t, issn, h) => DATA.sj.push([t, issn, 0, '', 900000 + DATA.sj.length, ...Array(2 * (DATA.sjYears.length - 5)).fill(null), ...h]);
@@ -710,6 +710,17 @@ eq('транслит / несколько написаний фамилии', A.
     eq('0.9.2 OCR: кириллические заголовки не меняет',
       O.repairOcrHeadlineSpacing('СИНТЕЗ Н АНОСТРУКТУРИРОВАННЫХ ПОКРЫТИЙ'),
       'СИНТЕЗ Н АНОСТРУКТУРИРОВАННЫХ ПОКРЫТИЙ');
+  }
+  {
+    const works = [{ doi: '10.1000/right', title: 'A scientific study of composite materials' }, { title: 'A different detailed publication title' }];
+    const records = [
+      { entry: { doi: '10.1000/right', query: 'text' }, found: 'no' },
+      { entry: { doi: '10.1000/wrong', query: works[0].title }, work: works[0], found: 'check' },
+      { entry: { query: works[1].title }, found: 'no' },
+      { entry: { query: 'unrelated missing entry' }, found: 'no' },
+      { entry: { query: 'unrelated missing entry' }, work: works[0], found: 'check' }
+    ];
+    eq('Сверка: DOI, разные DOI, неопознанные записи и near', A.crossMatch(records, works).map(x => x.kind), ['exact', 'missing', 'possible', 'missing', 'missing']);
   }
   console.log(`Пройдено ${pass} из ${pass + fail}`); fails.forEach(f => console.log('  НЕ ПРОЙДЕНО — ' + f)); process.exit(fail ? 1 : 0);
 })();
