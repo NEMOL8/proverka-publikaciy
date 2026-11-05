@@ -65,7 +65,9 @@ function journalSheet(e, year, head, notes) {
   if (sj) {
     const nowDiff = f.qNowYear !== f.qYear;
     h += `<div><div class="cap">Квартиль SCImago ${f.qYear}</div>${big(f.q ? 'Q' + f.q : '—', (year && !f.qExact ? `за ${year} данных нет — взят ${f.qYear}` : '') + (nowDiff ? `${year && !f.qExact ? '<br>' : ''}сейчас (${f.qNowYear}): ${f.qNow !== f.q ? chip('check', qS(f.qNow)) : qS(f.qNow)}` : (year ? '' : 'сейчас')))}</div>`;
-    h += `<div><div class="cap">Импакт-фактор (SCImago)</div>${f.cpd != null ? big(fmtNum(f.cpd), `цитирований на документ (2 года), ${f.qYear}` + (nowDiff && f.cpdNow != null ? `<br>сейчас (${f.qNowYear}): ${fmtNum(f.cpdNow)}` : '')) : big('—', `за ${f.qYear} год нет данных в SCImago`, 't')}</div>`;
+    const historicalCpd = year && year !== f.cpdNowYear && f.qExact && f.cpd != null
+      ? `<br>за ${f.qYear}: ${fmtNum(f.cpd)}` : '';
+    h += `<div><div class="cap">Импакт-фактор (SCImago)</div>${f.cpdNow != null ? big(fmtNum(f.cpdNow), `цитирований на документ (2 года), ${f.cpdNowYear}` + historicalCpd) : big('—', 'нет данных в SCImago', 't')}</div>`;
   } else h += `<div><div class="cap">Квартиль SCImago</div>${big(chip('unk', 'нет в SCImago'), e.sc || e.cs ? 'в Scopus есть, квартиля SCImago нет' : '', 't')}</div><div><div class="cap">Импакт-фактор (SCImago)</div>${big('—', 'нет данных в SCImago', 't')}</div>`;
   if (wl) { const a = wlAt(wl, year || null); h += `<div><div class="cap">Белый список${year ? ' ' + year : ''}</div>${a.excluded ? big(chip('check', 'исключён ' + wl.disc), '', 't') : big(a.lv || '—', (a.lv ? 'уровень' : 'без уровня') + (a.y ? ` (${a.y})` : '') + (!a.excluded && (a.curExcl || a.cur !== a.lv) ? '<br>' + chip('check', a.curExcl ? 'сейчас исключён ' + wl.disc : 'сейчас ' + (a.cur ? 'уровень ' + a.cur : 'без уровня')) : ''))}</div>`; }
   else h += `<div><div class="cap">Белый список</div>${big('нет', 'нет в списке', 't')}</div>`;
