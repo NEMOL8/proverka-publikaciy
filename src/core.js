@@ -353,6 +353,22 @@ function matchScore(w, entry) {
   return { score: Math.max(0, Math.min(1, s)), title: t };
 }
 
+/* Сверяем каждую запись списка с публикациями выбранного профиля. */
+function crossMatch(pubs, works) {
+  return pubs.map((p, index) => {
+    const entry = p.entry, source = p.work || null;
+    const doi = cleanDoi(entry.doi || (p.found === ST.ok && source && source.doi) || '');
+    const candidates = works.map((x, workIndex) => {
+      const w = x.w || x, otherDoi = cleanDoi(w.doi || '');
+      if (doi && otherDoi) return doi === otherDoi ? { workIndex, kind: 'exact' } : null;
+      const title = p.found === ST.ok && source && source.title;
+      const score = title ? Math.min(titleScore(title, w.title || ''), titleScore(w.title || '', title)) : titleScore(w.title || '', entry.query || '');
+      return score >= 0.85 ? { workIndex, kind: 'possible' } : null;
+    }).filter(Boolean);
+    return { index, candidates, kind: candidates.some(c => c.kind === 'exact') ? 'exact' : (candidates.length ? 'possible' : 'missing') };
+  });
+}
+
 /* ---------- фамилия руководителя ---------- */
 const TR = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya' };
 const translit = s => String(s).toLowerCase().split('').map(c => TR[c] != null ? TR[c] : c).join('');
@@ -674,4 +690,4 @@ function judgeProfileWork(w, ids) { const r = judgeProfileWork0(w);
 const instNames = me => !me ? [] : ((me.inst && me.inst.length) ? me.inst.map(x => x.name) : (me.raw || []));
 function judgeProfileWork0(w) { const j = findJournal(w.issns, w.journal); const jv = journalVerdict(j, w.year, null, null); return { w, j, jv }; }
 
-if (typeof module !== 'undefined') module.exports = { orgHit, leaderByOrg, ocrQuality, isElibList, isCapsLine, splitSiteEntries, detectSite, isUiLine, instNames, CHANGES, corrOf, orgMatch, orgTokens, findDuplicates, isPreprint, VERSION, ST, ST_NAME, norm, normIssn, lev, loadRef, findJournal, splitEntries, parseEntry, titleScore, canonName, leaderVariants, sameSurname, authorPosition, journalVerdict, sjAt, detectLeader, parseAuthorInput, orcidValid, wlAt, passFilter, parseFIO, nameMatch, translitVariants, judgePub, judgeProfileWork, matchScore, findDoi, FOUND_OK, FOUND_NEAR, cleanDoi, fmtNum, fmtIssn };
+if (typeof module !== 'undefined') module.exports = { crossMatch, orgHit, leaderByOrg, ocrQuality, isElibList, isCapsLine, splitSiteEntries, detectSite, isUiLine, instNames, CHANGES, corrOf, orgMatch, orgTokens, findDuplicates, isPreprint, VERSION, ST, ST_NAME, norm, normIssn, lev, loadRef, findJournal, splitEntries, parseEntry, titleScore, canonName, leaderVariants, sameSurname, authorPosition, journalVerdict, sjAt, detectLeader, parseAuthorInput, orcidValid, wlAt, passFilter, parseFIO, nameMatch, translitVariants, judgePub, judgeProfileWork, matchScore, findDoi, FOUND_OK, FOUND_NEAR, cleanDoi, fmtNum, fmtIssn };
