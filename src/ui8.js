@@ -62,6 +62,11 @@ function journalSheet(e, year, head, notes) {
     + (wl && sj && norm(wl.title.split(' | ')[0]) !== norm(sj.title) ? `<div class="dim">в Белом списке: ${esc(wl.title.split(' | ')[0])}</div>` : '')
     + `<div class="jmeta">${is ? 'ISSN ' + esc(is) : 'ISSN нет'}${sj && sj.type ? ' · ' + SJ_TYPE[sj.type] : (!sj && e.cs && CS_TYPE[e.cs.type] && e.cs.type !== 'j' ? ' · ' + CS_TYPE[e.cs.type] : '')}</div></div><div>${idxDots(wl, e.sc, year || null)}</div></div>`;
   h += '<div class="jgrid">';
+  const jif = f.jif;
+  const jifInfo = jif
+    ? big(fmtNum(jif.value), `${jif.year} · ${lnk(jif.url, 'данные издателя')}` + (year && year !== jif.year ? `<br>За ${year} год нет подтверждённого значения` : ''))
+    : big('—', `Нет подтверждённых данных · ${lnk('https://jcr.clarivate.com/', 'проверить в JCR')}`, 't');
+  h += `<div><div class="cap">Импакт-фактор журнала (JIF)</div>${jifInfo}</div>`;
   if (sj) {
     const nowDiff = f.qNowYear !== f.qYear;
     h += `<div><div class="cap">Квартиль SCImago ${f.qYear}</div>${big(f.q ? 'Q' + f.q : '—', (year && !f.qExact ? `за ${year} данных нет — взят ${f.qYear}` : '') + (nowDiff ? `${year && !f.qExact ? '<br>' : ''}сейчас (${f.qNowYear}): ${f.qNow !== f.q ? chip('check', qS(f.qNow)) : qS(f.qNow)}` : (year ? '' : 'сейчас')))}</div>`;

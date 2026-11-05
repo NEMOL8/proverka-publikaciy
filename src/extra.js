@@ -143,9 +143,27 @@ function findJournalQuery(q) {
   if (top && top.how === 'issn' && (out.hits.filter(h => h.how === 'issn').length > 1 || top.e.notes.some(n => /несколько изданий/.test(n)))) out.sure = null;
   return out;
 }
+/* JIF, опубликованный издателями. ISSN печатной и электронной версий указываются вместе. */
+const JIF_PUBLISHER = [
+  ['00280836 14764687', 2025, 56.1, 'https://www.nature.com/nature/journal-impact'],
+  ['20411723', 2025, 18.1, 'https://www.nature.com/ncomms/journal-impact'],
+  ['14761122 14764660', 2025, 38.0, 'https://www.nature.com/nmat/journal-impact'],
+  ['15487091 15487105', 2025, 28.2, 'https://www.nature.com/nmeth/journal-impact'],
+  ['20452322', 2025, 4.9, 'https://www.nature.com/srep/about'],
+  ['20524463', 2025, 7.2, 'https://www.nature.com/sdata/journal-impact'],
+  ['10678212 1934970X', 2025, 0.4, 'https://www.pleiades.online/en/journal/rusnferm/']
+];
+function journalJif(issns, year) {
+  const ids = new Set(issns.map(normIssn));
+  const hits = JIF_PUBLISHER.filter(([keys]) => keys.split(' ').some(id => ids.has(id)));
+  if (new Set(hits.map(([keys]) => keys)).size !== 1) return null;
+  const latest = hits.sort((a, b) => b[1] - a[1])[0];
+  const [, y, value, url] = hits.find(row => row[1] === year) || latest;
+  return { year: y, value, url };
+}
 /* Сведения об издании на год (год необязателен) — для показа и выгрузки */
 function journalFacts(e, year) {
-  const f = { title: e.title, issns: e.issns.map(fmtIssn), notes: e.notes.slice() };
+  const f = { title: e.title, issns: e.issns.map(fmtIssn), notes: e.notes.slice(), jif: journalJif(e.issns, year) };
   if (e.sj) { const jv = journalVerdict({ sj: e.sj, wl: null, sjHow: 'issn', wlHow: null }, year || null, null, null); Object.assign(f, { q: jv.qY, qYear: jv.sjYear, qExact: year ? jv.sjExact : true, qNow: jv.qL, qNowYear: jv.yL, cpd: e.sj.hist[jv.sjYear].cpd, cpdNow: jv.cpdLast, hist: Object.keys(e.sj.hist).map(y => [+y, e.sj.hist[y].q, e.sj.hist[y].cpd]), cats: e.sj.cats, sid: e.sj.sid, type: e.sj.type }); if (year && !jv.sjExact) f.notes.push(jv.notes.find(n => /взят/.test(n)) || ''); }
   if (e.wl) { const a = wlAt(e.wl, year || null); Object.assign(f, { wlLv: a.excluded ? 'excl' : a.lv, wlYear: a.y, wlNow: a.curExcl ? 'excl' : a.cur, wlDisc: e.wl.disc, idx: { wos: e.wl.wos, scopus: e.wl.scopus, rsci: e.wl.rsci } }); if (e.wl.state === 1 && e.wl.notice) f.notes.push('примечание Белого списка: ' + e.wl.notice); }
   if (e.sc) { f.sc = scStatusText(e.sc); f.scId = e.sc.id; if (year) f.notes.push(...scAt(e.sc, year).notes); }
